@@ -12,7 +12,7 @@ systemctl stop kladit-agent.service
 rm -f /etc/systemd/system/kladit-agent.timer /etc/systemd/system/kladit-agent.service
 if [ -d /etc/systemd/system/kladit-agent.service.d ]; then
     rm -f /etc/systemd/system/kladit-agent.service.d/connection.conf
-    rmdir /etc/systemd/system/kladit-agent.service.d
+    rmdir --ignore-fail-on-non-empty /etc/systemd/system/kladit-agent.service.d
 fi
 rm -f /usr/local/lib/kladit-agent/kladit-agent /etc/kladit-agent/token
 rmdir /usr/local/lib/kladit-agent
