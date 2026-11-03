@@ -112,3 +112,11 @@ go test ./...
 go vet ./...
 sh -n scripts/install.sh scripts/uninstall.sh
 ```
+
+## Лицензия
+
+Copyright (C) 2026 Егор Арефьев (Egorarefjev).
+
+Kladit Agent распространяется по лицензии [GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`).
+
+Исходный код: [github.com/Egorarefjev/kladit-agent](https://github.com/Egorarefjev/kladit-agent).
