@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -53,10 +54,14 @@ func Collect() (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("invalid /proc/uptime")
 	}
 	uptime, err := strconv.ParseFloat(fields[0], 64)
-	if err != nil || uptime < 0 || !(uptime < 1e20) {
+	if err != nil || uptime < 0 || math.IsNaN(uptime) || math.IsInf(uptime, 0) {
 		return Snapshot{}, fmt.Errorf("invalid uptime")
 	}
-	return Snapshot{time.Now().UTC(), usage, total, available, total - available, uptime}, nil
+	return Snapshot{
+		CollectedAt: time.Now().UTC(), CPUUsagePercent: usage,
+		MemoryTotalBytes: total, MemoryAvailableBytes: available, MemoryUsedBytes: total - available,
+		UptimeSeconds: uptime,
+	}, nil
 }
 
 func readCPU() ([]uint64, error) {

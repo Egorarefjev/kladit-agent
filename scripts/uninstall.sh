@@ -10,7 +10,11 @@ fi
 systemctl disable --now kladit-agent.timer
 systemctl stop kladit-agent.service
 rm -f /etc/systemd/system/kladit-agent.timer /etc/systemd/system/kladit-agent.service
-rm -f /usr/local/lib/kladit-agent/kladit-agent
+if [ -d /etc/systemd/system/kladit-agent.service.d ]; then
+    rm -f /etc/systemd/system/kladit-agent.service.d/connection.conf
+    rmdir --ignore-fail-on-non-empty /etc/systemd/system/kladit-agent.service.d
+fi
+rm -f /usr/local/lib/kladit-agent/kladit-agent /etc/kladit-agent/token
 rmdir /usr/local/lib/kladit-agent
 systemctl daemon-reload
-printf '%s\n' 'Agent removed. Local policy and journal logs preserved.'
+printf '%s\n' 'Agent and local token removed. Policy, connection config and journal logs preserved.'
