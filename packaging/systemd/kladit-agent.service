@@ -1,0 +1,28 @@
+[Unit]
+Description=Kladit Agent local metrics
+After=local-fs.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+User=kladit-agent
+ExecStart=/usr/local/lib/kladit-agent/kladit-agent metrics --policy /etc/kladit-agent/policy.json
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+UMask=0077
+MemoryMax=128M
+TasksMax=16
+TimeoutStartSec=15s
+StandardOutput=journal
+StandardError=journal
