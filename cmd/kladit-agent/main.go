@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/Egorarefjev/kladit-agent/internal/metrics"
 	"os"
 )
 
@@ -21,6 +23,17 @@ func main() {
 	}
 
 	switch args[0] {
+	case "metrics":
+		snapshot, err := metrics.Collect()
+		if err == nil {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			err = encoder.Encode(snapshot)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Metrics:", err)
+			os.Exit(1)
+		}
 	case "version", "--version":
 		fmt.Println("kladit-agent", version)
 	case "help", "--help", "-h":
@@ -32,11 +45,10 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Println(`Kladit Agent — development scaffold
+	fmt.Println(`Kladit Agent
 
 Usage:
   kladit-agent help      Show this help
   kladit-agent version   Show the version
-
-Server monitoring and backend connection are not implemented yet.`)
+  kladit-agent metrics   Print a Linux host metrics snapshot as JSON`)
 }
