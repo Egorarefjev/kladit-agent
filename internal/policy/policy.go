@@ -9,8 +9,8 @@ import (
 )
 
 type Policy struct {
-	Version      int             `json:"version"`
-	Capabilities map[string]bool `json:"capabilities"`
+	Version      int
+	Capabilities map[string]bool
 }
 
 func Load(path string) (Policy, error) {
@@ -30,71 +30,68 @@ func Load(path string) (Policy, error) {
 }
 
 func parse(data []byte) (Policy, error) {
-	d := json.NewDecoder(bytes.NewReader(data))
-	if err := checkObject(d); err != nil {
+	fields, err := object(data)
+	if err != nil {
 		return Policy{}, err
-	}
-	if _, err := d.Token(); err != io.EOF {
-		return Policy{}, fmt.Errorf("unexpected data after policy")
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return Policy{}, err
-	}
-	for key := range fields {
-		if key != "version" && key != "capabilities" {
-			return Policy{}, fmt.Errorf("unknown policy field: %s", key)
-		}
 	}
 	var p Policy
-	d = json.NewDecoder(bytes.NewReader(data))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&p); err != nil {
-		return Policy{}, fmt.Errorf("invalid policy: %w", err)
+	for key, value := range fields {
+		switch key {
+		case "version":
+			err = json.Unmarshal(value, &p.Version)
+		case "capabilities":
+			var capabilities map[string]json.RawMessage
+			capabilities, err = object(value)
+			p.Capabilities = make(map[string]bool)
+			for name, raw := range capabilities {
+				if name != "metrics.read" || (string(raw) != "true" && string(raw) != "false") {
+					return Policy{}, fmt.Errorf("unsupported capability or value: %s", name)
+				}
+				p.Capabilities[name] = string(raw) == "true"
+			}
+		default:
+			return Policy{}, fmt.Errorf("unknown policy field: %s", key)
+		}
+		if err != nil {
+			return Policy{}, fmt.Errorf("invalid policy: %w", err)
+		}
 	}
 	if p.Version != 1 {
 		return Policy{}, fmt.Errorf("unsupported policy version")
 	}
-	for capability := range p.Capabilities {
-		if capability != "metrics.read" {
-			return Policy{}, fmt.Errorf("unsupported capability: %s", capability)
-		}
-	}
 	return p, nil
 }
 
-// Reject ambiguous duplicate keys and null values before decoding the schema.
-func checkObject(d *json.Decoder) error {
+// Decode one object without silently accepting duplicate keys.
+func object(data []byte) (map[string]json.RawMessage, error) {
+	d := json.NewDecoder(bytes.NewReader(data))
 	token, err := d.Token()
 	if err != nil || token != json.Delim('{') {
-		return fmt.Errorf("policy must contain JSON objects")
+		return nil, fmt.Errorf("expected a JSON object")
 	}
-	seen := map[string]bool{}
+	fields := make(map[string]json.RawMessage)
 	for d.More() {
-		token, err = d.Token()
+		token, err := d.Token()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		key, ok := token.(string)
-		if !ok || seen[key] {
-			return fmt.Errorf("duplicate or invalid policy key")
+		key := token.(string)
+		if _, exists := fields[key]; exists {
+			return nil, fmt.Errorf("duplicate policy key: %s", key)
 		}
-		seen[key] = true
 		var raw json.RawMessage
 		if err := d.Decode(&raw); err != nil {
-			return err
+			return nil, err
 		}
-		if bytes.Equal(raw, []byte("null")) {
-			return fmt.Errorf("null policy values are not allowed")
-		}
-		if len(raw) > 0 && raw[0] == '{' {
-			if err := checkObject(json.NewDecoder(bytes.NewReader(raw))); err != nil {
-				return err
-			}
-		}
+		fields[key] = raw
 	}
-	_, err = d.Token()
-	return err
+	if _, err := d.Token(); err != nil {
+		return nil, err
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return nil, fmt.Errorf("unexpected data after JSON object")
+	}
+	return fields, nil
 }
 
 func (p Policy) Require(capability string) error {
