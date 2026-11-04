@@ -2,7 +2,7 @@
 
 Linux-агент для сбора и отправки метрик сервера в Kladit. CPU, RAM и uptime; без root при работе и без внешних Go-зависимостей.
 
-Отправка по HTTPS реализована на стороне агента. Приём метрик и выдача machine-токенов в backend Kladit пока не реализованы. Контракт подключения: [Agent API v1](docs/PROTOCOL.md).
+Отправка по HTTPS реализована на стороне агента. Приём метрик реализован в Kladit; enrollment требует companion PR backend. Контракт подключения: [Agent API v1](docs/PROTOCOL.md).
 
 ## Сборка
 
@@ -100,10 +100,10 @@ sudo systemctl stop kladit-agent.service
 ## Удаление
 
 ```sh
-sudo sh scripts/uninstall.sh --confirm
+sudo sh /usr/local/lib/kladit-agent/uninstall.sh --confirm
 ```
 
-Служба, бинарник и локальный токен удаляются. Policy, адрес приёмника и journal сохраняются. Копии токена также нужно отозвать на backend.
+Скрипт удаления сохраняется при установке, поэтому исходный комплект для удаления не нужен. Служба, бинарник, скрипт удаления и локальный токен удаляются. Policy, адрес приёмника и journal сохраняются. Для переустановки сразу используйте `--confirm --purge`, чтобы удалить policy и адрес приёмника. Пользовательские настройки systemd сохраняются и используются при следующей установке. Копии токена также нужно отозвать на backend.
 
 ## Проверки
 
@@ -120,3 +120,23 @@ Copyright (C) 2026 Егор Арефьев (Egorarefjev).
 Kladit Agent распространяется по лицензии [GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`).
 
 Исходный код: [github.com/Egorarefjev/kladit-agent](https://github.com/Egorarefjev/kladit-agent).
+
+
+
+## Установка из кабинета (enrollment)
+
+Пользователь создаёт заявку в Kladit → сервер → «Агент» → «Установить вручную» и вставляет одну команду на Linux-сервере. Нужны sudo/root, curl, tar, sha256sum и systemd 247+. Go, git и ручные token/config файлы на сервере пользователя не нужны. Поддерживаются Linux amd64 и arm64. Повторная установка поверх существующей запрещена: сначала выполните штатный `sudo sh /usr/local/lib/kladit-agent/uninstall.sh --confirm --purge`, затем создайте новую заявку.
+
+Команда разрешает только metrics.read. Enrollment живёт 10 минут; command/history/clipboard содержат этот временный секрет. Не публикуйте команду. После обмена он непригоден; machine token не выводится и остаётся только на машине. При потерянном ответе создайте новую заявку, автоматического повтора обмена нет.
+
+### Подготовка комплекта оператором Kladit
+
+На build-машине с Go 1.25+:
+
+```sh
+sh scripts/package.sh /path/to/kladit/apps/web/static/agent/0.2.0 https://kladit.example/agent/0.2.0
+```
+
+Это собирает статические Linux-бинарники, systemd units, installer и SHA-256 manifests. Сборка frontend Kladit должна выполняться после упаковки. Публикуйте каталог целиком через свой доверенный HTTPS origin. Не меняйте содержимое уже опубликованного versioned каталога; для обновления нужен новый путь. Checksums обнаруживают повреждение архива, но не являются отдельной подписью: доверие опирается на TLS и контроль deploy-артефакта. Не скачиваем mutable latest/release и не отключаем TLS verification.
+
+`scripts/bootstrap.sh` — шаблон; запускается только сгенерированный `install.sh`. SSH orchestration в будущем запускает этот же installer с `--enroll-url` и секретом на stdin после проверки адреса и host key.
