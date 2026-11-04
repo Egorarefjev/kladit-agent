@@ -6,7 +6,7 @@ umask 022
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 usage() {
-    printf '%s\n' 'Usage: sh install.sh --allow-metrics [--config PATH --token-file PATH] [--check]'
+    printf '%s\n' 'Usage: sh install.sh --allow-metrics [--enroll-url HTTPS_URL | --config PATH --token-file PATH] [--check]'
 }
 allow=false
 check=false
