@@ -12,13 +12,15 @@ allow=false
 check=false
 config=
 token=
+enroll_url=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --allow-metrics) allow=true ;;
         --check) check=true ;;
-        --config|--token-file)
+        --config|--token-file|--enroll-url)
             [ "$#" -ge 2 ] && [ -n "$2" ] || fail "Missing value for $1"
             case "$1" in
+                --enroll-url) enroll_url=$2 ;;
                 --config) config=$2 ;;
                 --token-file) token=$2 ;;
             esac
@@ -28,6 +30,7 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
+[ -z "$enroll_url" ] || { [ -z "$config" ] && [ -z "$token" ]; } || fail "Enrollment cannot be combined with machine credentials."
 [ "$allow" = true ] || fail 'Explicit --allow-metrics consent is required.'
 if [ -n "$config" ] || [ -n "$token" ]; then
     [ -n "$config" ] && [ -n "$token" ] || fail '--config and --token-file must be supplied together.'
@@ -36,9 +39,11 @@ fi
 [ "$(uname -s)" = Linux ] || fail 'Linux is required.'
 [ "$(id -u)" -eq 0 ] || fail 'Run the installer as root (sudo). The agent runs unprivileged.'
 [ -d /run/systemd/system ] || fail 'A running systemd system instance is required.'
-for command in systemctl install; do
+for command in systemctl install mktemp; do
     command -v "$command" >/dev/null || fail "Missing command: $command"
 done
+systemd_version=$(systemctl --version | head -n 1 | cut -d ' ' -f 2)
+[ "$systemd_version" -ge 247 ] || fail 'systemd 247+ is required.'
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 [ -f "$root/bin/kladit-agent" ] || fail 'Missing bin/kladit-agent; build the Linux binary first.'
 for name in kladit-agent.service kladit-agent.timer; do
@@ -48,12 +53,19 @@ done
 for path in /etc/kladit-agent /usr/local/lib/kladit-agent /etc/systemd/system/kladit-agent.service.d; do
     [ ! -e "$path" ] && [ ! -L "$path" ] || fail "Already exists: $path; automatic replacement is not supported."
 done
-if [ -n "$config" ]; then
+if [ -n "$config$enroll_url" ]; then
     [ -f "$root/packaging/systemd/connection.conf" ] || fail 'Missing connection.conf unit override.'
 fi
 if [ "$check" = true ]; then
     printf '%s\n' 'Installation prerequisites passed. No files changed.'
     exit 0
+fi
+if [ -n "$enroll_url" ]; then
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT HUP INT TERM
+    "$root/bin/kladit-agent" enroll --url "$enroll_url" --directory "$stage"
+    config=$stage/connection.json
+    token=$stage/token
 fi
 install -d -o root -g root -m 0755 /etc/kladit-agent /usr/local/lib/kladit-agent
 install -o root -g root -m 0755 "$root/bin/kladit-agent" /usr/local/lib/kladit-agent/kladit-agent
@@ -74,3 +86,4 @@ if ! systemctl start kladit-agent.service; then
 fi
 systemctl enable --now kladit-agent.timer
 printf '%s\n' 'Kladit Agent installed.'
+

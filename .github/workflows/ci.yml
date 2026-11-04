@@ -1,0 +1,25 @@
+name: Agent CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go test -race ./...
+      - run: sh -n scripts/install.sh scripts/bootstrap.sh scripts/package.sh
+      - run: sh scripts/package.sh "$RUNNER_TEMP/bundles" https://kladit.example/agent/0.2.0
+      - run: |
+          mkdir "$RUNNER_TEMP/install-check"
+          tar -xzf "$RUNNER_TEMP/bundles/kladit-agent-linux-amd64.tar.gz" -C "$RUNNER_TEMP/install-check"
+          sudo sh "$RUNNER_TEMP/install-check/scripts/install.sh" --allow-metrics --enroll-url https://kladit.example/api/v1/agent/enroll --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-bundle-test-only
+          path: ${{ runner.temp }}/bundles

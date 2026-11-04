@@ -16,7 +16,7 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/policy"
 )
 
-const version = "0.1.0-dev"
+const version = "0.2.0"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -41,6 +41,19 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 			fmt.Fprintln(out, "kladit-agent", version)
 		} else {
 			printHelp(out)
+		}
+		return 0
+	case "enroll":
+		flags := flag.NewFlagSet("enroll", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		endpoint := flags.String("url", "", "HTTPS enrollment URL")
+		directory := flags.String("directory", "", "Private staging directory")
+		if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *endpoint == "" || *directory == "" {
+			return 2
+		}
+		if err := connection.Enroll(ctx, *endpoint, os.Stdin, *directory); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
 		}
 		return 0
 	case "metrics", "policy-check", "send":
@@ -132,6 +145,7 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out, `Kladit Agent
 
 Usage:
+  kladit-agent enroll --url HTTPS_URL --directory PATH < enrollment-token
   kladit-agent version
   kladit-agent metrics [--policy PATH]
   kladit-agent policy-check [--policy PATH]

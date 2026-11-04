@@ -120,3 +120,23 @@ Copyright (C) 2026 Егор Арефьев (Egorarefjev).
 Kladit Agent распространяется по лицензии [GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`).
 
 Исходный код: [github.com/Egorarefjev/kladit-agent](https://github.com/Egorarefjev/kladit-agent).
+
+
+
+## Установка из кабинета (enrollment)
+
+Пользователь создаёт заявку в Kladit → сервер → «Агент» → «Установить вручную» и вставляет одну команду на Linux-сервере. Нужны sudo/root, curl, tar, sha256sum и systemd 247+. Go, git и ручные token/config файлы на сервере пользователя не нужны. Поддерживаются Linux amd64 и arm64. Повторная установка поверх существующей запрещена: сначала выполните штатный `scripts/uninstall.sh`, затем создайте новую заявку.
+
+Команда разрешает только metrics.read. Enrollment живёт 10 минут; command/history/clipboard содержат этот временный секрет. Не публикуйте команду. После обмена он непригоден; machine token не выводится и остаётся только на машине. При потерянном ответе создайте новую заявку, автоматического повтора обмена нет.
+
+### Подготовка комплекта оператором Kladit
+
+На build-машине с Go 1.25+:
+
+```sh
+sh scripts/package.sh /path/to/kladit/apps/web/static/agent/0.2.0 https://kladit.example/agent/0.2.0
+```
+
+Это собирает статические Linux-бинарники, systemd units, installer и SHA-256 manifests. Сборка frontend Kladit должна выполняться после упаковки. Публикуйте каталог целиком через свой доверенный HTTPS origin. Не меняйте содержимое уже опубликованного versioned каталога; для обновления нужен новый путь. Checksums обнаруживают повреждение архива, но не являются отдельной подписью: доверие опирается на TLS и контроль deploy-артефакта. Не скачиваем mutable latest/release и не отключаем TLS verification.
+
+`scripts/bootstrap.sh` — шаблон; запускается только сгенерированный `install.sh`. SSH orchestration в будущем запускает этот же installer с `--enroll-url` и секретом на stdin после проверки адреса и host key.
