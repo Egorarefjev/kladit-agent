@@ -129,14 +129,43 @@ Kladit Agent распространяется по лицензии [GNU Affero 
 
 Команда разрешает только metrics.read. Enrollment живёт 10 минут; command/history/clipboard содержат этот временный секрет. Не публикуйте команду. После обмена он непригоден; machine token не выводится и остаётся только на машине. При потерянном ответе создайте новую заявку, автоматического повтора обмена нет.
 
-### Подготовка комплекта оператором Kladit
+### GitHub Releases
 
-На build-машине с Go 1.25+:
+Оператору Kladit не нужны Go и локальная сборка. Для installer используйте URL конкретного опубликованного релиза:
 
-```sh
-sh scripts/package.sh /path/to/kladit/apps/web/static/agent/0.2.0 https://kladit.example/agent/0.2.0
+```dotenv
+PUBLIC_URL=https://kladit.example
+AGENT_INSTALLER_URL=https://github.com/Egorarefjev/kladit-agent/releases/download/v0.2.0/install.sh
 ```
 
-Это собирает статические Linux-бинарники, systemd units, installer и SHA-256 manifests. Сборка frontend Kladit должна выполняться после упаковки. Публикуйте каталог целиком через свой доверенный HTTPS origin. Не меняйте содержимое уже опубликованного versioned каталога; для обновления нужен новый путь. Checksums обнаруживают повреждение архива, но не являются отдельной подписью: доверие опирается на TLS и контроль deploy-артефакта. Не скачиваем mutable latest/release и не отключаем TLS verification.
+PUBLIC_URL — адрес Kladit, а installer и bundles скачиваются с GitHub Releases. Не используйте `/releases/latest/download/`. Backend должен поддерживать HTTPS-редиректы при скачивании installer; это не меняет запрет редиректов для enrollment и метрик.
 
-`scripts/bootstrap.sh` — шаблон; запускается только сгенерированный `install.sh`. SSH orchestration в будущем запускает этот же installer с `--enroll-url` и секретом на stdin после проверки адреса и host key.
+### Создание релиза
+
+Один раз включите **Settings → General → Releases → Enable release immutability** в GitHub-репозитории. Это блокирует замену файлов и перемещение тега опубликованного релиза. Одних versioned URL для такой защиты недостаточно. Workflow проверяет immutable-статус после публикации; без настройки релиз не считается успешно выпущенным.
+
+1. Измените `const version` в `cmd/kladit-agent/main.go`, например на `0.2.1`, и слейте проверенный PR в main. Это единственный источник версии агента.
+2. Создайте и отправьте соответствующий тег:
+
+   ```sh
+   git switch main
+   git pull --ff-only
+   git tag -a v0.2.1 -m "Kladit Agent v0.2.1"
+   git push origin v0.2.1
+   ```
+
+Для первого релиза текущей версии используйте `v0.2.0`. Workflow запускается только по version tag, проверяет gofmt, race tests, vet и shell-синтаксис, вызывает существующий `package.sh`, проверяет checksums, версию бинарника и installer. Несовпадение тега и версии останавливает выпуск до создания Release.
+
+Публикуются пять файлов:
+
+- `kladit-agent-linux-amd64.tar.gz`
+- `kladit-agent-linux-amd64.tar.gz.sha256`
+- `kladit-agent-linux-arm64.tar.gz`
+- `kladit-agent-linux-arm64.tar.gz.sha256`
+- `install.sh`
+
+Сначала создаётся draft и загружаются все файлы, затем релиз публикуется. Существующий релиз не перезаписывается; повторный запуск останавливается. Если загрузка оборвалась, удалите только незавершённый draft и повторите workflow. Для исправления опубликованного релиза выпускайте новый тег. Не перемещайте опубликованные теги.
+
+Обычный push/PR CI работает отдельно и ничего не публикует. Новый workflow нужно сначала слить в main, затем создавать тег. Автоматического выпуска релизов при merge нет.
+
+`scripts/package.sh` и `scripts/bootstrap.sh` остаются общим механизмом упаковки и установки. Checksums проверяют целостность архива; скачивание идёт по проверенному HTTPS, включая HTTPS-редиректы GitHub. Автообновление и SSH-доставка в этот flow не входят.

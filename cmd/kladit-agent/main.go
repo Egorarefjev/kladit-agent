@@ -51,7 +51,7 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 		if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *endpoint == "" || *directory == "" {
 			return 2
 		}
-		if err := connection.Enroll(ctx, *endpoint, os.Stdin, *directory); err != nil {
+		if err := connection.Enroll(ctx, *endpoint, os.Stdin, *directory, version); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}

@@ -1,5 +1,8 @@
 name: Agent CI
-on: [push, pull_request]
+on:
+  push:
+    branches: ["**"]
+  pull_request:
 permissions:
   contents: read
 jobs:
@@ -13,8 +16,9 @@ jobs:
           cache: false
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go test -race ./...
-      - run: sh -n scripts/install.sh scripts/uninstall.sh scripts/bootstrap.sh scripts/package.sh
+      - run: for script in scripts/*.sh; do sh -n "$script"; done
       - run: sh scripts/package.sh "$RUNNER_TEMP/bundles" https://kladit.example/agent/0.2.0
+      - run: sh scripts/check-package.sh "$RUNNER_TEMP/bundles" "$(go run ./cmd/kladit-agent version | cut -d ' ' -f 2)"
       - run: |
           mkdir "$RUNNER_TEMP/install-check"
           tar -xzf "$RUNNER_TEMP/bundles/kladit-agent-linux-amd64.tar.gz" -C "$RUNNER_TEMP/install-check"
