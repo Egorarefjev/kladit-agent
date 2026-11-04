@@ -46,13 +46,17 @@ systemd_version=$(systemctl --version | head -n 1 | cut -d ' ' -f 2)
 [ "$systemd_version" -ge 247 ] || fail 'systemd 247+ is required.'
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 [ -f "$root/bin/kladit-agent" ] || fail 'Missing bin/kladit-agent; build the Linux binary first.'
+[ -f "$root/scripts/uninstall.sh" ] || fail 'Missing scripts/uninstall.sh.'
 for name in kladit-agent.service kladit-agent.timer; do
     [ -f "$root/packaging/systemd/$name" ] || fail "Missing unit: $name"
     [ ! -e "/etc/systemd/system/$name" ] && [ ! -L "/etc/systemd/system/$name" ] || fail "Already installed: $name"
 done
-for path in /etc/kladit-agent /usr/local/lib/kladit-agent /etc/systemd/system/kladit-agent.service.d; do
+for path in /etc/kladit-agent /usr/local/lib/kladit-agent; do
     [ ! -e "$path" ] && [ ! -L "$path" ] || fail "Already exists: $path; automatic replacement is not supported."
 done
+dropins=/etc/systemd/system/kladit-agent.service.d
+[ ! -L "$dropins" ] && { [ ! -e "$dropins" ] || [ -d "$dropins" ]; } || fail "Expected a directory: $dropins"
+[ ! -e "$dropins/connection.conf" ] && [ ! -L "$dropins/connection.conf" ] || fail "Already exists: $dropins/connection.conf"
 if [ -n "$config$enroll_url" ]; then
     [ -f "$root/packaging/systemd/connection.conf" ] || fail 'Missing connection.conf unit override.'
 fi
@@ -69,6 +73,7 @@ if [ -n "$enroll_url" ]; then
 fi
 install -d -o root -g root -m 0755 /etc/kladit-agent /usr/local/lib/kladit-agent
 install -o root -g root -m 0755 "$root/bin/kladit-agent" /usr/local/lib/kladit-agent/kladit-agent
+install -o root -g root -m 0755 "$root/scripts/uninstall.sh" /usr/local/lib/kladit-agent/uninstall.sh
 printf '%s\n' '{"version":1,"capabilities":{"metrics.read":true}}' > /etc/kladit-agent/policy.json
 chmod 0644 /etc/kladit-agent/policy.json
 for name in kladit-agent.service kladit-agent.timer; do
@@ -86,4 +91,3 @@ if ! systemctl start kladit-agent.service; then
 fi
 systemctl enable --now kladit-agent.timer
 printf '%s\n' 'Kladit Agent installed.'
-
