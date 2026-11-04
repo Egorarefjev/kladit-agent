@@ -60,7 +60,7 @@ func TestEnrollment(t *testing.T) {
 	x509.SetFallbackRoots(roots)
 	t.Setenv("GODEBUG", "x509usefallbackroots=1")
 	dir := t.TempDir()
-	if err := Enroll(context.Background(), endpoint, strings.NewReader(token), dir); err != nil {
+	if err := Enroll(context.Background(), endpoint, strings.NewReader(token), dir, "test"); err != nil {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(filepath.Join(dir, "token"))
@@ -71,7 +71,7 @@ func TestEnrollment(t *testing.T) {
 	if stored != strings.Repeat("b", 43) {
 		t.Fatal("token mismatch")
 	}
-	if err := Enroll(context.Background(), endpoint, strings.NewReader(token), dir); err == nil {
+	if err := Enroll(context.Background(), endpoint, strings.NewReader(token), dir, "test"); err == nil {
 		t.Fatal("overwrites credentials")
 	}
 	stored, _ = LoadToken(filepath.Join(dir, "token"))
@@ -93,7 +93,7 @@ func TestEnrollment(t *testing.T) {
 			status = scenario.status
 			body = scenario.body
 			dir := t.TempDir()
-			err := Enroll(context.Background(), scenario.url, strings.NewReader(token), dir)
+			err := Enroll(context.Background(), scenario.url, strings.NewReader(token), dir, "test")
 			if err == nil {
 				t.Fatal("expected rejection")
 			}

@@ -17,8 +17,8 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 base='@BUNDLE_BASE@'
 name=kladit-agent-linux-$arch.tar.gz
-curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$base/$name" -o "$stage/$name"
-curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$base/$name.sha256" -o "$stage/$name.sha256"
+curl --fail --silent --show-error --location --proto-redir '=https' --proto '=https' --tlsv1.2 "$base/$name" -o "$stage/$name"
+curl --fail --silent --show-error --location --proto-redir '=https' --proto '=https' --tlsv1.2 "$base/$name.sha256" -o "$stage/$name.sha256"
 (cd "$stage" && sha256sum --check "$name.sha256" >/dev/null)
 tar -xzf "$stage/$name" -C "$stage"
 sh "$stage/scripts/install.sh" --allow-metrics --enroll-url "$2"

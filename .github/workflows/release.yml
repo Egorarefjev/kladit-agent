@@ -1,0 +1,53 @@
+name: Agent Release
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+permissions:
+  contents: read
+concurrency:
+  group: agent-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check tag and agent version
+        shell: bash
+        run: |
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$(go run ./cmd/kladit-agent version)" = "kladit-agent ${TAG#v}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo 'Release already exists; assets will not be replaced.' >&2
+            exit 1
+          fi
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: for script in scripts/*.sh; do sh -n "$script"; done
+      - name: Build versioned bundles
+        run: sh scripts/package.sh "$RUNNER_TEMP/release" "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+      - name: Verify bundles and installer
+        run: sh scripts/check-package.sh "$RUNNER_TEMP/release" "${TAG#v}"
+      - name: Smoke check systemd installer
+        run: |
+          mkdir "$RUNNER_TEMP/install-check"
+          tar -xzf "$RUNNER_TEMP/release/kladit-agent-linux-amd64.tar.gz" -C "$RUNNER_TEMP/install-check"
+          sudo sh "$RUNNER_TEMP/install-check/scripts/install.sh" --allow-metrics --enroll-url https://kladit.example/api/v1/agent/enroll --check
+      - name: Publish complete release
+        run: |
+          gh release create "$TAG" "$RUNNER_TEMP/release/"* --verify-tag --draft --title "Kladit Agent $TAG" --generate-notes
+          gh release edit "$TAG" --draft=false --latest=false
+          test "$(gh release view "$TAG" --json isImmutable --jq .isImmutable)" = true

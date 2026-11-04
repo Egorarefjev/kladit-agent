@@ -14,7 +14,7 @@ import (
 
 // Enroll exchanges a one-time credential from stdin. Neither credential is printed.
 // directory must be a private staging directory owned by the installer.
-func Enroll(ctx context.Context, endpoint string, input io.Reader, directory string) error {
+func Enroll(ctx context.Context, endpoint string, input io.Reader, directory, agentVersion string) error {
 	data, err := io.ReadAll(io.LimitReader(input, 45))
 	if err != nil {
 		return fmt.Errorf("read enrollment token failed")
@@ -25,7 +25,7 @@ func Enroll(ctx context.Context, endpoint string, input io.Reader, directory str
 	}) >= 0 {
 		return fmt.Errorf("invalid enrollment token")
 	}
-	client, err := NewClient(Config{Endpoint: endpoint}, token, "0.2.0")
+	client, err := NewClient(Config{Endpoint: endpoint}, token, agentVersion)
 	if err != nil {
 		return err
 	}
