@@ -31,7 +31,16 @@ jobs:
             test -x /usr/local/lib/kladit-agent/uninstall.sh
             sudo install -d /etc/systemd/system/kladit-agent.service.d
             printf '[Service]\nMemoryMax=96M\n' | sudo tee /etc/systemd/system/kladit-agent.service.d/override.conf > /dev/null
-            sudo install -m 0600 /dev/null /etc/kladit-agent/token
+            sudo systemctl stop kladit-agent.timer
+            printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' | sudo tee /etc/kladit-agent/token > /dev/null
+            sudo chmod 0600 /etc/kladit-agent/token
+            printf '%s\\n' '{"endpoint":"https://127.0.0.1:1/api/v1/agent/metrics"}' | sudo tee /etc/kladit-agent/connection.json > /dev/null
+            sudo install -m 0644 "$bundle/packaging/systemd/connection.conf" /etc/systemd/system/kladit-agent.service.d/connection.conf
+            sudo systemctl daemon-reload
+            # A closed port must reach the network error, not fail credential permission checks.
+            if sudo systemctl start kladit-agent.service; then exit 1; fi
+            sudo journalctl -u kladit-agent.service -n 20 --no-pager | grep -q 'metrics delivery failed'
+            test ! -e /run/kladit-agent
             sudo sh /usr/local/lib/kladit-agent/uninstall.sh --confirm --purge
             test ! -e /usr/local/lib/kladit-agent
             test ! -e /etc/kladit-agent
