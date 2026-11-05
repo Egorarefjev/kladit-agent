@@ -79,6 +79,7 @@ jobs:
             fi
             test -f received
             systemctl is-enabled kladit-agent.timer
+            sudo systemctl stop kladit-agent.timer kladit-agent.service
             test ! -e /run/kladit-agent
             test -x /usr/local/lib/kladit-agent/uninstall.sh
             sudo sh /usr/local/lib/kladit-agent/uninstall.sh --confirm --purge
