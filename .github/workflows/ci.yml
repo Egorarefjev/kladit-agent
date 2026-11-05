@@ -26,12 +26,62 @@ jobs:
       - name: Install, remove and reinstall with a custom systemd override
         run: |
           bundle="$RUNNER_TEMP/install-check"
+          fixture=$(mktemp -d)
+          ca=/run/kladit-agent-ci-ca.pem
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=127.0.0.1 \
+            -addext subjectAltName=IP:127.0.0.1 -keyout "$fixture/key.pem" -out "$fixture/cert.pem"
+          sudo install -m 0644 "$fixture/cert.pem" "$ca"
+          cd "$fixture"
+          python3 - <<'PY' &
+          import json
+          import ssl
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          from pathlib import Path
+
+          class MetricsReceiver(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                  if (self.path == "/api/v1/agent/metrics"
+                      and self.headers.get("Authorization") == "Bearer " + "a" * 43
+                      and payload["version"] == 1
+                      and payload["metrics"]["memory_total_bytes"] > 0):
+                      Path("received").touch()
+                      self.send_response(204)
+                  else:
+                      self.send_response(400)
+                  self.end_headers()
+
+          server = HTTPServer(("127.0.0.1", 0), MetricsReceiver)
+          tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          tls.load_cert_chain("cert.pem", "key.pem")
+          server.socket = tls.wrap_socket(server.socket, server_side=True)
+          Path("connection.json").write_text(json.dumps({
+              "endpoint": f"https://127.0.0.1:{server.server_port}/api/v1/agent/metrics"
+          }))
+          server.serve_forever()
+          PY
+          receiver=$!
+          trap 'kill "$receiver"; sudo rm -f "$ca"; rm -rf "$fixture"' EXIT
+          for attempt in {1..50}; do
+            if test -s connection.json; then break; fi
+            sleep 0.1
+          done
+          test -s connection.json
+          printf '%043d\n' 0 | tr 0 a > token
+          sudo install -d /etc/systemd/system/kladit-agent.service.d
+          printf '[Service]\nMemoryMax=96M\nEnvironment=SSL_CERT_FILE=%s\n' "$ca" |
+            sudo tee /etc/systemd/system/kladit-agent.service.d/override.conf > /dev/null
           for cycle in 1 2; do
-            sudo sh "$bundle/scripts/install.sh" --allow-metrics
+            rm -f received
+            if ! sudo sh "$bundle/scripts/install.sh" --allow-metrics --config "$fixture/connection.json" --token-file "$fixture/token"; then
+              sudo journalctl -u kladit-agent.service -n 20 --no-pager
+              exit 1
+            fi
+            test -f received
+            systemctl is-enabled kladit-agent.timer
+            sudo systemctl stop kladit-agent.timer kladit-agent.service
+            test ! -e /run/kladit-agent
             test -x /usr/local/lib/kladit-agent/uninstall.sh
-            sudo install -d /etc/systemd/system/kladit-agent.service.d
-            printf '[Service]\nMemoryMax=96M\n' | sudo tee /etc/systemd/system/kladit-agent.service.d/override.conf > /dev/null
-            sudo install -m 0600 /dev/null /etc/kladit-agent/token
             sudo sh /usr/local/lib/kladit-agent/uninstall.sh --confirm --purge
             test ! -e /usr/local/lib/kladit-agent
             test ! -e /etc/kladit-agent

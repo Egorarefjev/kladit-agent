@@ -16,7 +16,7 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/policy"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
