@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -10,6 +11,14 @@ import (
 	"time"
 )
 
+const maxSafeInteger = 1<<53 - 1
+
+type Disk struct {
+	TotalBytes     uint64 `json:"total_bytes"`
+	UsedBytes      uint64 `json:"used_bytes"`
+	AvailableBytes uint64 `json:"available_bytes"`
+}
+
 type Snapshot struct {
 	CollectedAt          time.Time `json:"collected_at"`
 	CPUUsagePercent      float64   `json:"cpu_usage_percent"`
@@ -17,10 +26,12 @@ type Snapshot struct {
 	MemoryAvailableBytes uint64    `json:"memory_available_bytes"`
 	MemoryUsedBytes      uint64    `json:"memory_used_bytes"`
 	UptimeSeconds        float64   `json:"uptime_seconds"`
+	Disk                 Disk      `json:"disk"`
+	GPUs                 []GPU     `json:"gpus"`
 }
 
 // Collect samples host CPU counters over one second. It does not report container limits.
-func Collect() (Snapshot, error) {
+func Collect(ctx context.Context) (Snapshot, error) {
 	if runtime.GOOS != "linux" {
 		return Snapshot{}, fmt.Errorf("metrics requires Linux")
 	}
@@ -57,10 +68,17 @@ func Collect() (Snapshot, error) {
 	if err != nil || uptime < 0 || math.IsNaN(uptime) || math.IsInf(uptime, 0) {
 		return Snapshot{}, fmt.Errorf("invalid uptime")
 	}
+	disk, err := readRootDisk()
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("read root filesystem /: %w", err)
+	}
+	gpus := readNvidiaGPUs(ctx)
 	return Snapshot{
 		CollectedAt: time.Now().UTC(), CPUUsagePercent: usage,
 		MemoryTotalBytes: total, MemoryAvailableBytes: available, MemoryUsedBytes: total - available,
 		UptimeSeconds: uptime,
+		Disk:          disk,
+		GPUs:          gpus,
 	}, nil
 }
 

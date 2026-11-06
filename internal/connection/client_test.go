@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -33,9 +34,12 @@ func trustedClient(t *testing.T, server *httptest.Server) *Client {
 }
 
 func TestSend(t *testing.T) {
+	utilization := uint64(50)
 	snapshot := metrics.Snapshot{
 		CollectedAt: time.Now().UTC().Truncate(time.Second), CPUUsagePercent: 25,
 		MemoryTotalBytes: 1024, MemoryAvailableBytes: 768, MemoryUsedBytes: 256, UptimeSeconds: 123,
+		Disk: metrics.Disk{TotalBytes: 4096, UsedBytes: 1024, AvailableBytes: 2048},
+		GPUs: []metrics.GPU{{Index: 2, Name: "NVIDIA A100", UtilizationPercent: &utilization}},
 	}
 	var requests atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +58,7 @@ func TestSend(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
 			t.Error(err)
 		}
-		if envelope.Version != 1 || envelope.AgentVersion != "test" || envelope.Metrics != snapshot {
+		if envelope.Version != 1 || envelope.AgentVersion != "test" || !reflect.DeepEqual(envelope.Metrics, snapshot) {
 			t.Error("unexpected metrics envelope")
 		}
 		w.WriteHeader(http.StatusNoContent)
