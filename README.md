@@ -1,6 +1,6 @@
 # Kladit Agent
 
-Linux-агент для сбора и отправки метрик сервера в Kladit. CPU, RAM и uptime; без root при работе и без внешних Go-зависимостей.
+Linux-агент для сбора и отправки метрик сервера в Kladit. Собирает CPU, RAM, uptime, объём диска и показатели NVIDIA GPU. Работает без root и внешних Go-зависимостей.
 
 Отправка по HTTPS реализована на стороне агента. Приём метрик реализован в Kladit; enrollment требует companion PR backend. Контракт подключения: [Agent API v1](docs/PROTOCOL.md).
 
@@ -28,8 +28,10 @@ CGO_ENABLED=0 go build -o bin/kladit-agent ./cmd/kladit-agent
 | `memory_available_bytes` | Доступная RAM, включая освобождаемый cache |
 | `memory_used_bytes` | Общая RAM минус доступная |
 | `uptime_seconds` | Время работы системы в секундах |
+| `disk` | Общий, занятый и доступный объём файловой системы `/` |
+| `gpus` | NVIDIA GPU с загрузкой, VRAM и температурой |
 
-Память указана в байтах. Метрики относятся к procfs и не учитывают cgroup-лимиты контейнеров.
+Объёмы указаны в байтах. CPU и RAM отражают данные procfs без учёта cgroup-лимитов. Для GPU нужен установленный драйвер и доступный службе `nvidia-smi`. Служба использует устройства группы `nvidia-frontend` с правами, заданными на хосте. Если GPU недоступен, в снимке будет `"gpus": []`. [Формат снимка](docs/PROTOCOL.md).
 
 ## Разрешения
 
@@ -135,7 +137,7 @@ Kladit Agent распространяется по лицензии [GNU Affero 
 
 ```dotenv
 PUBLIC_URL=https://kladit.example
-AGENT_INSTALLER_URL=https://github.com/Egorarefjev/kladit-agent/releases/download/v0.2.0/install.sh
+AGENT_INSTALLER_URL=https://github.com/Egorarefjev/kladit-agent/releases/download/v0.2.1/install.sh
 ```
 
 PUBLIC_URL — адрес Kladit, а installer и bundles скачиваются с GitHub Releases. Не используйте `/releases/latest/download/`. Backend должен поддерживать HTTPS-редиректы при скачивании installer; это не меняет запрет редиректов для enrollment и метрик.
@@ -144,17 +146,17 @@ PUBLIC_URL — адрес Kladit, а installer и bundles скачиваются
 
 Один раз включите **Settings → General → Releases → Enable release immutability** в GitHub-репозитории. Это блокирует замену файлов и перемещение тега опубликованного релиза. Одних versioned URL для такой защиты недостаточно. Workflow проверяет immutable-статус после публикации; без настройки релиз не считается успешно выпущенным.
 
-1. Измените `const version` в `cmd/kladit-agent/main.go`, например на `0.2.1`, и слейте проверенный PR в main. Это единственный источник версии агента.
+1. Измените `const version` в `cmd/kladit-agent/main.go`, например на `0.3.0`, и слейте проверенный PR в main. Это единственный источник версии агента.
 2. Создайте и отправьте соответствующий тег:
 
    ```sh
    git switch main
    git pull --ff-only
-   git tag -a v0.2.1 -m "Kladit Agent v0.2.1"
-   git push origin v0.2.1
+   git tag -a v0.3.0 -m "Kladit Agent v0.3.0"
+   git push origin v0.3.0
    ```
 
-Для первого релиза текущей версии используйте `v0.2.0`. Workflow запускается только по version tag, проверяет gofmt, race tests, vet и shell-синтаксис, вызывает существующий `package.sh`, проверяет checksums, версию бинарника и installer. Несовпадение тега и версии останавливает выпуск до создания Release.
+Workflow запускается по тегу версии, проверяет gofmt, race tests, vet и shell-синтаксис, вызывает `package.sh`, проверяет контрольные суммы, версию бинарника и installer. Несовпадение тега и версии останавливает выпуск до создания Release.
 
 Публикуются пять файлов:
 

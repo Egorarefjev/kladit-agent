@@ -16,7 +16,7 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/policy"
 )
 
-const version = "0.2.1"
+const version = "0.3.0"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -121,7 +121,7 @@ func execute(ctx context.Context, command, policyPath, configPath, tokenPath str
 		}
 	}
 
-	snapshot, err := metrics.Collect()
+	snapshot, err := metrics.Collect(ctx)
 	if err != nil {
 		return err
 	}
