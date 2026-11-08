@@ -2,7 +2,7 @@
 
 Linux-агент для сбора и отправки метрик сервера в Kladit. Собирает CPU, RAM, uptime, объём диска и показатели NVIDIA GPU. Работает без root и внешних Go-зависимостей.
 
-Отправка по HTTPS реализована на стороне агента. Приём метрик реализован в Kladit; enrollment требует companion PR backend. Контракт подключения: [Agent API v1](docs/PROTOCOL.md).
+Отправка по HTTPS реализована на стороне агента. Приём метрик и enrollment реализованы в Kladit; контракт требует совместимой версии backend. Контракт подключения: [Agent API v1](docs/PROTOCOL.md).
 
 ## Сборка
 
