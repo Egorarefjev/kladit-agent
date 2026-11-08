@@ -64,7 +64,7 @@ User-Agent: kladit-agent/<version>
 
 Enrollment обменивает одноразовую заявку на machine credentials; установщик не должен получать общий секрет backend или сохранять пароль аккаунта. Одноразовые коды нельзя использовать как постоянный токен метрик. Приватный ключ для будущей proof-of-possession identity генерируется на самой машине.
 
-Установщик поддерживает enrollment и прежний режим готового machine-токена из файла. mTLS и SSH-установка из кабинета пока не реализованы. Долгоживущий bearer-токен, украденный с машины, позволяет отправлять метрики от её имени до отзыва; текущий transport не является proof-of-possession identity.
+Установщик поддерживает enrollment и прежний режим готового machine-токена из файла. mTLS пока не реализован. Установку и удаление по SSH из кабинета выполняет backend Kladit; сам агент не принимает SSH-подключения. Долгоживущий bearer-токен, украденный с машины, позволяет отправлять метрики от её имени до отзыва; текущий transport не является proof-of-possession identity.
 
 
 ## Enrollment v1
@@ -93,4 +93,4 @@ Content-Type: application/json
 
 Агент требует проверенный HTTPS без redirect/proxy и принимает metrics_url только того же origin. Ответ ограничен 4 KiB. Machine token записывается с mode 0600, существующие credentials не перезаписываются. Если ответ потерян или локальная запись не удалась, запрос не повторяется: пользователь создаёт новую заявку. Локальные policy/connection/token создаются установщиком, далее используется прежний `send` и systemd timer.
 
-Ручной и будущий SSH-bootstrap используют один `scripts/bootstrap.sh` из собранного комплекта. SSH передаёт тот же enrollment через stdin, не меняя API и жизненный цикл. Автоматическая SSH-доставка пока не реализована. Bearer identity не является proof-of-possession.
+Ручной и SSH-bootstrap используют один `scripts/bootstrap.sh` из собранного комплекта. SSH передаёт тот же enrollment через stdin, не меняя API и жизненный цикл. SSH-доставку организует backend Kladit с проверкой host key; отдельный SSH transport в агенте не нужен. Bearer identity не является proof-of-possession.

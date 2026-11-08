@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": ".agents/skills/code-review-and-quality/SKILL.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "skills/code-review-and-quality/SKILL.md",
+      "sha256": "a47551daf26e3cc5670f5286f9e4850c2fc662d5ba08b86eee895254f3851797"
+    },
+    {
+      "path": ".agents/skills/code-review-and-quality/LICENSE",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "LICENSE",
+      "sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7"
+    },
+    {
+      "path": ".agents/skills/code-simplification/SKILL.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "skills/code-simplification/SKILL.md",
+      "sha256": "e13b433345e6bf425c3625442ac1b3507b371c18d7ea3e3db822da7a7f742a29"
+    },
+    {
+      "path": ".agents/skills/code-simplification/LICENSE",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "LICENSE",
+      "sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7"
+    },
+    {
+      "path": ".agents/skills/debugging-and-error-recovery/SKILL.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "skills/debugging-and-error-recovery/SKILL.md",
+      "sha256": "01cff31fbd8796b444225f8a8386219792c25cebb5d4d76df664afd1d13ed610"
+    },
+    {
+      "path": ".agents/skills/debugging-and-error-recovery/LICENSE",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "LICENSE",
+      "sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7"
+    },
+    {
+      "path": ".agents/skills/security-and-hardening/SKILL.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "skills/security-and-hardening/SKILL.md",
+      "sha256": "358566859a3d791c474eb9fa36939b45875c7480d7d4650eaa092dceae2c1c37"
+    },
+    {
+      "path": ".agents/skills/security-and-hardening/references/hardening-patterns.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "skills/security-and-hardening/references/hardening-patterns.md",
+      "sha256": "18ff8d176eedaaa8ec1fba4cd7adacc8d81105b1b162b404b37c43b563a313c8"
+    },
+    {
+      "path": ".agents/skills/security-and-hardening/LICENSE",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "LICENSE",
+      "sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7"
+    },
+    {
+      "path": ".agents/references/performance-checklist.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "references/performance-checklist.md",
+      "sha256": "ce946457d4a502846e781a2747cf6af50bcc79b1957a66dc024f50557e8982e1"
+    },
+    {
+      "path": ".agents/references/security-checklist.md",
+      "source": "addyosmani/agent-skills",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "sourcePath": "references/security-checklist.md",
+      "sha256": "84ed77cbba419c95390618f857eca2fadfeec12f2e5d39af4cc1833b94d82a39"
+    },
+    {
+      "path": ".agents/skills/golang-pro/SKILL.md",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "skills/golang-pro/SKILL.md",
+      "sha256": "056e7141e481d24656202c80ca1c86c6f971b663d594dbfef17bb6e1faabdca2"
+    },
+    {
+      "path": ".agents/skills/golang-pro/references/concurrency.md",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "skills/golang-pro/references/concurrency.md",
+      "sha256": "2f19694806d4db4c94ec0a2e48734426d20834dba3da7a6ec2e5a9fc628df078"
+    },
+    {
+      "path": ".agents/skills/golang-pro/references/generics.md",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "skills/golang-pro/references/generics.md",
+      "sha256": "366d9303f68fa19258a19ed4fa9bb801dd9a01c8ee562fba440013f05957d2e2"
+    },
+    {
+      "path": ".agents/skills/golang-pro/references/interfaces.md",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "skills/golang-pro/references/interfaces.md",
+      "sha256": "0cc55637ddfc76136631293676482c3da6416f0109ff53703ba2f0e57d8c8322"
+    },
+    {
+      "path": ".agents/skills/golang-pro/references/project-structure.md",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "skills/golang-pro/references/project-structure.md",
+      "sha256": "dcc0e9e4a19ee769ff7dcef26ae600982206354e0edea09b266b4b3b54a75e75"
+    },
+    {
+      "path": ".agents/skills/golang-pro/references/testing.md",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "skills/golang-pro/references/testing.md",
+      "sha256": "bbcddfc32d216711d5da60d437021d2c17bc417f5508b18a6bc4721325b575b8"
+    },
+    {
+      "path": ".agents/skills/golang-pro/LICENSE",
+      "source": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "sourcePath": "LICENSE",
+      "sha256": "06dcddbb6908a0c6dd4a9e8ec822eea41d5a460a53089fecccc8a68049e99241"
+    }
+  ]
+}
