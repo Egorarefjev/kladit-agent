@@ -137,10 +137,10 @@ Kladit Agent распространяется по лицензии [GNU Affero 
 
 ```dotenv
 PUBLIC_URL=https://kladit.example
-AGENT_INSTALLER_URL=https://github.com/Egorarefjev/kladit-agent/releases/download/v0.2.1/install.sh
+AGENT_INSTALLER_URL=https://github.com/Egorarefjev/kladit-agent/releases/download/v0.3.0/install.sh
 ```
 
-PUBLIC_URL — адрес Kladit, а installer и bundles скачиваются с GitHub Releases. Не используйте `/releases/latest/download/`. Backend должен поддерживать HTTPS-редиректы при скачивании installer; это не меняет запрет редиректов для enrollment и метрик.
+PUBLIC_URL — адрес Kladit, а installer и bundles скачиваются с GitHub Releases. Не используйте `/releases/latest/download/`. Установочная команда следует HTTPS-редиректам при скачивании файлов. Enrollment и метрики требуют прямого HTTPS-адреса.
 
 ### Создание релиза
 
