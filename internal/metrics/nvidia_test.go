@@ -7,18 +7,18 @@ import (
 )
 
 func TestParseNvidiaGPUs(t *testing.T) {
-	const first = `{"index":0,"name":"NVIDIA A100","utilization_percent":25,"vram_total_bytes":42949672960,"vram_used_bytes":1073741824,"temperature_celsius":42}`
-	const second = `{"index":3,"name":"NVIDIA B200, test","utilization_percent":null,"vram_total_bytes":1073741824,"vram_used_bytes":0,"temperature_celsius":null}`
+	const first = `{"uuid":"GPU-test-a","index":0,"name":"NVIDIA A100","utilization_percent":25,"vram_total_bytes":42949672960,"vram_used_bytes":1073741824,"temperature_celsius":42}`
+	const second = `{"uuid":"GPU-test-b","index":3,"name":"NVIDIA B200, test","utilization_percent":null,"vram_total_bytes":1073741824,"vram_used_bytes":0,"temperature_celsius":null}`
 	for _, tc := range []struct {
 		name   string
 		output string
 		want   string
 	}{
 		{"zero", "", "[]"},
-		{"one", "0, NVIDIA A100, 25, 40960, 1024, 42\n", "[" + first + "]"},
+		{"one", "GPU-test-a, 0, NVIDIA A100, 25, 40960, 1024, 42\n", "[" + first + "]"},
 		{
 			"multiple with unavailable readings",
-			"0, NVIDIA A100, 25, 40960, 1024, 42\r\n3, \"NVIDIA B200, test\", [N/A], 1024, 0, [Not Supported]\r\n",
+			"GPU-test-a, 0, NVIDIA A100, 25, 40960, 1024, 42\r\nGPU-test-b, 3, \"NVIDIA B200, test\", [N/A], 1024, 0, [Not Supported]\r\n",
 			"[" + first + "," + second + "]",
 		},
 	} {
@@ -38,10 +38,13 @@ func TestParseNvidiaGPUs(t *testing.T) {
 func TestParseNvidiaGPUsInvalidOutput(t *testing.T) {
 	for _, output := range []string{
 		"Unable to determine the device handle",
-		"0, NVIDIA A100, 101, 40960, 1024, 42\n",
-		"0, NVIDIA A100, 25, 4, 8, 42\n",
-		"0, NVIDIA A100, 25, 8589934592, 0, 42\n",
-		"0, NVIDIA A100, 25, 40960, 1024, broken\n",
+		"not-a-uuid, 0, NVIDIA A100, 25, 40960, 1024, 42\n",
+		"GPU-bad@uuid, 0, NVIDIA A100, 25, 40960, 1024, 42\n",
+		"GPU-, 0, NVIDIA A100, 25, 40960, 1024, 42\n",
+		"GPU-test-a, 0, NVIDIA A100, 101, 40960, 1024, 42\n",
+		"GPU-test-a, 0, NVIDIA A100, 25, 4, 8, 42\n",
+		"GPU-test-a, 0, NVIDIA A100, 25, 8589934592, 0, 42\n",
+		"GPU-test-a, 0, NVIDIA A100, 25, 40960, 1024, broken\n",
 	} {
 		if _, err := parseNvidiaGPUs([]byte(output)); err == nil {
 			t.Errorf("accepted invalid output %q", output)
