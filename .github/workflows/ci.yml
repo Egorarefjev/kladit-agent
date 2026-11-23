@@ -8,6 +8,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      TEST_TAG: v99.0.0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -17,8 +19,12 @@ jobs:
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go test -race ./...
       - run: for script in scripts/*.sh; do sh -n "$script"; done
-      - run: sh scripts/package.sh "$RUNNER_TEMP/bundles" https://kladit.example/agent/0.2.0
-      - run: sh scripts/check-package.sh "$RUNNER_TEMP/bundles" "$(go run ./cmd/kladit-agent version | cut -d ' ' -f 2)"
+      - run: sh tests/package-version.sh
+      - run: sh scripts/package.sh "$RUNNER_TEMP/bundles" "https://kladit.example/agent/$TEST_TAG" "$TEST_TAG"
+      - run: sh scripts/check-package.sh "$RUNNER_TEMP/bundles" "${TEST_TAG#v}"
+      - name: Reject a package with a mismatched expected version
+        run: |
+          if sh scripts/check-package.sh "$RUNNER_TEMP/bundles" 98.0.0; then exit 1; fi
       - run: |
           mkdir "$RUNNER_TEMP/install-check"
           tar -xzf "$RUNNER_TEMP/bundles/kladit-agent-linux-amd64.tar.gz" -C "$RUNNER_TEMP/install-check"
