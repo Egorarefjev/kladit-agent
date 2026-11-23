@@ -17,7 +17,8 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/policy"
 )
 
-const version = "0.4.0"
+// Release builds set version from the validated Git tag via -ldflags -X.
+var version = "dev"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

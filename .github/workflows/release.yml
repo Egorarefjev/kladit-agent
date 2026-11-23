@@ -24,11 +24,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Check tag and agent version
+      - name: Check release does not exist
         shell: bash
         run: |
-          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          test "$(go run ./cmd/kladit-agent version)" = "kladit-agent ${TAG#v}"
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo 'Release already exists; assets will not be replaced.' >&2
             exit 1
@@ -38,7 +36,7 @@ jobs:
       - run: go vet ./...
       - run: for script in scripts/*.sh; do sh -n "$script"; done
       - name: Build versioned bundles
-        run: sh scripts/package.sh "$RUNNER_TEMP/release" "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+        run: sh scripts/package.sh "$RUNNER_TEMP/release" "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" "$TAG"
       - name: Verify bundles and installer
         run: sh scripts/check-package.sh "$RUNNER_TEMP/release" "${TAG#v}"
       - name: Smoke check systemd installer
