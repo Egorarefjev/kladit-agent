@@ -64,7 +64,16 @@ systemctl stop kladit-agent.timer kladit-agent.service
 mv -f "$stage/replacement" "$binary"
 swapped=true
 if ! systemctl start kladit-agent.service; then
-    fail 'Agent update failed; restoring the previous binary.'
+    # Exit 3 is reserved for delivery failures after local preparation succeeded.
+    # Check normal process exit too: SIGQUIT also has status 3, but is a crash.
+    state=$(systemctl show kladit-agent.service -p Result -p ExecMainCode -p ExecMainStatus)
+    if printf '%s\n' "$state" | grep -qx 'Result=exit-code' &&
+       printf '%s\n' "$state" | grep -qx 'ExecMainCode=1' &&
+       printf '%s\n' "$state" | grep -qx 'ExecMainStatus=3'; then
+        printf '%s\n' 'Agent binary is updated, but metrics delivery failed. Check the endpoint and service journal; delivery will retry on the existing timer.' >&2
+    else
+        fail 'Agent update failed locally; restoring the previous binary.'
+    fi
 fi
 committed=true
 printf '%s\n' "Kladit Agent updated from $current to $target."

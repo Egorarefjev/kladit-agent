@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -98,6 +100,10 @@ func TestSendRejectsStatusAndRedirect(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), fmt.Sprint(status)) || strings.Contains(err.Error(), testToken) {
 				t.Fatal("expected a redacted HTTP status error")
 			}
+			var delivery *DeliveryError
+			if !errors.As(err, &delivery) {
+				t.Fatal("HTTP rejection must be a delivery error")
+			}
 			if requests.Load() != 1 {
 				t.Fatal("failed snapshots must not be retried automatically")
 			}
@@ -120,8 +126,10 @@ func TestSendVerifiesTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.http.CloseIdleConnections()
-	if err := client.Send(context.Background(), metrics.Snapshot{}); err == nil || strings.Contains(err.Error(), server.URL) {
-		t.Fatal("expected redacted TLS verification failure")
+	err = client.Send(context.Background(), metrics.Snapshot{})
+	var delivery *DeliveryError
+	if !errors.As(err, &delivery) || strings.Contains(err.Error(), server.URL) {
+		t.Fatal("expected typed, redacted TLS delivery failure", err)
 	}
 }
 
@@ -138,7 +146,22 @@ func TestSendTimeoutAndCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := client.Send(ctx, metrics.Snapshot{}); err == nil {
-		t.Fatal("cancelled request succeeded")
+	err := client.Send(ctx, metrics.Snapshot{})
+	var delivery *DeliveryError
+	if !errors.Is(err, context.Canceled) || errors.As(err, &delivery) {
+		t.Fatal("cancellation must not be reported as a delivery failure", err)
+	}
+}
+
+func TestEncodingFailureIsLocal(t *testing.T) {
+	client, err := NewClient(Config{Endpoint: "https://127.0.0.1:1"}, testToken, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.http.CloseIdleConnections()
+	err = client.Send(context.Background(), metrics.Snapshot{CPUUsagePercent: math.NaN()})
+	var delivery *DeliveryError
+	if err == nil || errors.As(err, &delivery) {
+		t.Fatal("encoding failure must remain local", err)
 	}
 }

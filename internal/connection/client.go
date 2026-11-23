@@ -12,6 +12,19 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/metrics"
 )
 
+// DeliveryError means a locally prepared snapshot could not reach or be accepted
+// by its receiver. It deliberately contains no endpoint, token or response body.
+type DeliveryError struct {
+	statusCode int
+}
+
+func (e *DeliveryError) Error() string {
+	if e.statusCode != 0 {
+		return fmt.Sprintf("metrics delivery rejected: HTTP %d", e.statusCode)
+	}
+	return "metrics delivery failed: check network, TLS and endpoint configuration"
+}
+
 type Client struct {
 	endpoint string
 	token    string
@@ -62,11 +75,14 @@ func (c *Client) Send(ctx context.Context, snapshot metrics.Snapshot) error {
 	response, err := c.http.Do(req)
 	if err != nil {
 		// URL errors may include local configuration; responses may reflect credentials.
-		return fmt.Errorf("metrics delivery failed: check network, TLS and endpoint configuration")
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return &DeliveryError{}
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("metrics delivery rejected: HTTP %d", response.StatusCode)
+		return &DeliveryError{statusCode: response.StatusCode}
 	}
 	return nil
 }

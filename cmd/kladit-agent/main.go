@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -87,6 +88,10 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 
 	if err := execute(ctx, command, *policyPath, configPath, tokenPath, out); err != nil {
 		fmt.Fprintln(stderr, err)
+		var delivery *connection.DeliveryError
+		if errors.As(err, &delivery) {
+			return 3
+		}
 		return 1
 	}
 	return 0
