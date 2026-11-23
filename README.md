@@ -179,10 +179,15 @@ Workflow запускается по тегу версии, проверяет g
 Скачайте закреплённый установщик и запустите отдельный режим обновления:
 
 ```sh
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-  https://github.com/Egorarefjev/kladit-agent/releases/download/v0.4.0/install.sh -o /tmp/kladit-agent-update.sh
-sudo sh /tmp/kladit-agent-update.sh --update
-rm /tmp/kladit-agent-update.sh
+(
+  set -eu
+  umask 077
+  stage=$(mktemp -d)
+  trap 'rm -rf "$stage"' EXIT
+  curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+    https://github.com/Egorarefjev/kladit-agent/releases/download/v0.4.0/install.sh -o "$stage/install.sh"
+  sudo sh "$stage/install.sh" --update
+)
 ```
 
 Bootstrap проверяет SHA-256 комплекта. Контрольные суммы защищают от повреждения, но не от компрометации издателя. Обновление требует существующей root-owned systemd-установки, сохраняет policy, токен, endpoint, unit-файлы и пользовательские overrides. Меняется только бинарник; формат unit-файлов в 0.4.0 совместим с 0.3.0. Обновление не выдаёт новых разрешений. Одновременные обновления блокируются; повторное обновление той же версии ничего не меняет, downgrade запрещён. После замены выполняется один обычный запуск службы: при ошибке бинарник откатывается и возвращается прежнее состояние таймера. Аварийное выключение питания/SIGKILL не позволяет выполнить shell rollback; при повреждённой установке потребуется ручное восстановление. Автоматического фонового обновления нет.
