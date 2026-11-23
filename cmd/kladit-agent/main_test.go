@@ -59,3 +59,33 @@ func TestSendRechecksPermission(t *testing.T) {
 		t.Fatal("revoked permission must prevent network delivery:", stderr.String())
 	}
 }
+
+func TestSendExitCodesDistinguishDeliveryFromLocalFailures(t *testing.T) {
+	dir := t.TempDir()
+	policyPath, configPath, tokenPath := filepath.Join(dir, "policy"), filepath.Join(dir, "config"), filepath.Join(dir, "token")
+	for path, content := range map[string]string{
+		policyPath: `{"version":1,"capabilities":{"metrics.read":true}}`,
+		configPath: `{"endpoint":"https://127.0.0.1:1/metrics"}`,
+		tokenPath:  strings.Repeat("a", 43),
+	} {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := []string{"send", "--policy", policyPath, "--config", configPath, "--token-file", tokenPath}
+	var out, stderr bytes.Buffer
+	if code := run(context.Background(), args, &out, &stderr); code != 3 || out.Len() != 0 || !strings.Contains(stderr.String(), "metrics delivery failed") {
+		t.Fatalf("unreachable receiver must exit 3 without snapshot output: %d %q", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "127.0.0.1") || strings.Contains(stderr.String(), strings.Repeat("a", 43)) {
+		t.Fatal("error exposed endpoint or token")
+	}
+	if err := os.Chmod(tokenPath, 0644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), args, &out, &stderr); code != 1 || out.Len() != 0 {
+		t.Fatalf("invalid private token file must be a local failure: %d", code)
+	}
+}
