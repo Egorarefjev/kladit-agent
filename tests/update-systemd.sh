@@ -70,7 +70,7 @@ for version in 0.2.1 0.3.0; do
             http401) echo 401 > "$fixture/response-status" ;;
             http500) echo 500 > "$fixture/response-status" ;;
             bad-config) echo '{}' > /etc/kladit-agent/connection.json; expected=1 ;;
-            bad-token) chmod 0644 /etc/kladit-agent/token; expected=1 ;;
+            bad-token) echo invalid-token > /etc/kladit-agent/token; expected=1 ;;
             denied-policy) echo '{"version":1,"capabilities":{"metrics.read":false}}' > /etc/kladit-agent/policy.json; expected=1 ;;
         esac
         systemctl daemon-reload
