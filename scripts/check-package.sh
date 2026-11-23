@@ -20,6 +20,7 @@ for arch in amd64 arm64; do
     test -f "$stage/$arch/LICENSE"
     for script in "$stage/$arch/scripts/"*.sh; do sh -n "$script"; done
     test -f "$stage/$arch/packaging/systemd/connection.conf"
+    test -f "$stage/$arch/scripts/update.sh"
 done
 test "$("$stage/amd64/bin/kladit-agent" version)" = "kladit-agent $2"
 "$stage/amd64/bin/kladit-agent" help > /dev/null

@@ -5,7 +5,12 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 umask 077
 [ "$(id -u)" -eq 0 ] || { echo 'Run with sudo.' >&2; exit 1; }
-[ "$#" -eq 2 ] && [ "$1" = --enroll-url ] || { echo 'Expected --enroll-url HTTPS_URL' >&2; exit 1; }
+mode=install
+if [ "$#" -eq 1 ] && [ "$1" = --update ]; then
+ mode=update
+elif [ "$#" -ne 2 ] || [ "$1" != --enroll-url ]; then
+ echo 'Expected --enroll-url HTTPS_URL or --update' >&2; exit 1
+fi
 [ "$(uname -s)" = Linux ] || exit 1
 case "$(uname -m)" in
  x86_64) arch=amd64 ;;
@@ -21,4 +26,8 @@ curl --fail --silent --show-error --location --proto-redir '=https' --proto '=ht
 curl --fail --silent --show-error --location --proto-redir '=https' --proto '=https' --tlsv1.2 "$base/$name.sha256" -o "$stage/$name.sha256"
 (cd "$stage" && sha256sum --check "$name.sha256" >/dev/null)
 tar -xzf "$stage/$name" -C "$stage"
-sh "$stage/scripts/install.sh" --allow-metrics --enroll-url "$2"
+if [ "$mode" = update ]; then
+ sh "$stage/scripts/update.sh"
+else
+ sh "$stage/scripts/install.sh" --allow-metrics --enroll-url "$2"
+fi
