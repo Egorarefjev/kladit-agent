@@ -70,7 +70,7 @@ if ! systemctl start kladit-agent.service; then
     if printf '%s\n' "$state" | grep -qx 'Result=exit-code' &&
        printf '%s\n' "$state" | grep -qx 'ExecMainCode=1' &&
        printf '%s\n' "$state" | grep -qx 'ExecMainStatus=3'; then
-        printf '%s\n' 'Agent binary is updated, but metrics delivery failed. Check the endpoint and service journal; delivery will retry on the existing timer.' >&2
+        printf '%s\n' 'Agent binary is updated, but metrics delivery failed. Check the endpoint and service journal. The previous timer state is preserved.' >&2
     else
         fail 'Agent update failed locally; restoring the previous binary.'
     fi
