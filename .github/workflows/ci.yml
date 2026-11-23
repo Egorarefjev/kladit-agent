@@ -81,6 +81,32 @@ jobs:
             fi
             test -f received
             systemctl is-enabled kladit-agent.timer
+            if [ "$cycle" = 1 ]; then
+              # Exercise an actual published predecessor, preserving the private installation.
+              curl --fail --silent --show-error --location https://github.com/Egorarefjev/kladit-agent/releases/download/v0.3.0/kladit-agent-linux-amd64.tar.gz -o "$fixture/old.tar.gz"
+              curl --fail --silent --show-error --location https://github.com/Egorarefjev/kladit-agent/releases/download/v0.3.0/kladit-agent-linux-amd64.tar.gz.sha256 -o "$fixture/kladit-agent-linux-amd64.tar.gz.sha256"
+              cp "$fixture/old.tar.gz" "$fixture/kladit-agent-linux-amd64.tar.gz"
+              (cd "$fixture" && sha256sum --check kladit-agent-linux-amd64.tar.gz.sha256)
+              mkdir "$fixture/old"
+              tar -xzf "$fixture/old.tar.gz" -C "$fixture/old"
+              sudo systemctl stop kladit-agent.timer kladit-agent.service
+              sudo install -m 0755 "$fixture/old/bin/kladit-agent" /usr/local/lib/kladit-agent/kladit-agent
+              sudo sha256sum /etc/kladit-agent/* /etc/systemd/system/kladit-agent.service.d/* > "$fixture/before"
+              sudo systemctl start kladit-agent.timer
+              sudo sh "$bundle/scripts/update.sh"
+              test "$(/usr/local/lib/kladit-agent/kladit-agent version)" = "$("$bundle/bin/kladit-agent" version)"
+              sudo sha256sum --check "$fixture/before"
+              systemctl is-active --quiet kladit-agent.timer
+              sudo sh "$bundle/scripts/update.sh"
+              mkdir -p "$fixture/broken/bin" "$fixture/broken/scripts"
+              cp "$bundle/scripts/update.sh" "$fixture/broken/scripts/"
+              printf '#!/bin/sh\nif [ "$1" = version ]; then echo "kladit-agent 0.4.1"; else exit 1; fi\n' > "$fixture/broken/bin/kladit-agent"
+              chmod 755 "$fixture/broken/bin/kladit-agent"
+              if sudo sh "$fixture/broken/scripts/update.sh"; then exit 1; fi
+              test "$(/usr/local/lib/kladit-agent/kladit-agent version)" = "$("$bundle/bin/kladit-agent" version)"
+              sudo sha256sum --check "$fixture/before"
+              systemctl is-active --quiet kladit-agent.timer
+            fi
             sudo systemctl stop kladit-agent.timer kladit-agent.service
             test ! -e /run/kladit-agent
             test -x /usr/local/lib/kladit-agent/uninstall.sh
