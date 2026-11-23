@@ -9,7 +9,16 @@ service=/etc/systemd/system/kladit-agent.service
 timer=/etc/systemd/system/kladit-agent.timer
 override=/etc/systemd/system/kladit-agent.service.d/override.conf
 stage=$(mktemp -d)
-trap 'rm -rf "$stage"' EXIT
+cleanup() {
+    result=$?
+    trap - EXIT
+    if [ "$result" -ne 0 ]; then
+        journalctl -u kladit-agent.service -u kladit-agent.timer -n 30 --no-pager
+    fi
+    rm -rf "$stage"
+    exit "$result"
+}
+trap cleanup EXIT
 cp /etc/kladit-agent/policy.json "$stage/policy"
 cp /etc/kladit-agent/token "$stage/token"
 cp "$override" "$stage/override"
@@ -24,7 +33,7 @@ prepare() {
     cp "$stage/override" "$override"
     echo 204 > "$fixture/response-status"
     systemctl daemon-reload
-    systemctl reset-failed kladit-agent.service
+    systemctl reset-failed kladit-agent.service kladit-agent.timer
 }
 
 check_state() {
@@ -87,6 +96,8 @@ for version in 0.2.1 0.3.0; do
         echo 204 > "$fixture/response-status"
         systemctl daemon-reload
         rm -f "$fixture/received"
+        # Scenarios deliberately restart units faster than the normal 30s cadence.
+        systemctl reset-failed kladit-agent.service kladit-agent.timer
         systemctl start kladit-agent.service
         test -f "$fixture/received"
         printf '%s\n' "$version: $scenario passed"
