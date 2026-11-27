@@ -11,6 +11,7 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 for command in systemctl install mktemp flock stat; do
     command -v "$command" >/dev/null || fail "Missing command: $command"
 done
+[ ! -e /etc/systemd/system/kladit-worker.service ] && [ ! -L /etc/systemd/system/kladit-worker.service ] || fail 'Worker profile installed; update requires drain/reconciliation support from a later worker release.'
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 directory=/usr/local/lib/kladit-agent
 binary=$directory/kladit-agent

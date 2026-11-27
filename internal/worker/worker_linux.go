@@ -1,0 +1,164 @@
+package worker
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/Egorarefjev/kladit-agent/internal/connection"
+	"github.com/Egorarefjev/kladit-agent/internal/policy"
+)
+
+// Run owns one synchronous supervisor under an exclusive lock. Execution is deliberately absent.
+func Run(ctx context.Context, options Options) error {
+	p, err := policy.LoadWorker(options.PolicyPath)
+	if err != nil {
+		return err
+	}
+	if !p.ExecuteAllowed() {
+		// Existing state may still need control/ACK delivery after permission is revoked.
+		if _, err := os.Lstat(filepath.Join(options.StatePath, "state.json")); err != nil {
+			return fmt.Errorf("capability denied: jobs.execute")
+		}
+	}
+	config, err := connection.LoadConfig(options.ConfigPath)
+	if err != nil {
+		return err
+	}
+	token, err := connection.LoadToken(options.TokenPath)
+	if err != nil {
+		return err
+	}
+	client, err := connection.NewClient(config, token, options.Version)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	log := options.Log
+	if log == nil {
+		log = io.Discard
+	}
+	if options.Check {
+		if err = preflight(ctx, p, options.StatePath, options.DockerSocket); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(log, "Worker prerequisites passed; container execution is disabled in this build")
+		return err
+	}
+	j, err := openJournal(options.StatePath)
+	if err != nil {
+		return err
+	}
+	defer j.Close()
+	fmt.Fprintln(log, "Worker foundation active; container execution is disabled in this build")
+	failed := false
+	wasHealthy := true
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		p, err = policy.LoadWorker(options.PolicyPath)
+		if err != nil {
+			return err
+		}
+		// Read-only preflight is evaluated locally, but this build never advertises execution readiness.
+		healthy := false
+		if p.ExecuteAllowed() {
+			healthy = preflight(ctx, p, options.StatePath, options.DockerSocket) == nil
+		}
+		request := connection.JobsRequest{Version: 1, WorkerGeneration: j.state.Generation, AgentVersion: options.Version, Capabilities: []string{"jobs.execute.v1"}, ExecuteAllowed: p.ExecuteAllowed(), PreflightOK: false}
+		if j.state.Current != nil {
+			request.Report = &j.state.Current.Report
+		}
+		response, syncErr := client.SyncJobs(ctx, request)
+		if syncErr == nil {
+			if err = j.accept(response); err != nil {
+				return err
+			}
+			if failed {
+				fmt.Fprintln(log, "Worker sync recovered")
+				failed = false
+			}
+			if !healthy && wasHealthy {
+				fmt.Fprintln(log, "Worker runtime preflight unavailable; execution remains disabled")
+			}
+			wasHealthy = healthy
+		} else {
+			if ctx.Err() != nil {
+				return nil
+			}
+			var delivery *connection.JobsError
+			if !errors.As(syncErr, &delivery) || delivery.Permanent() {
+				return syncErr
+			}
+			if !failed {
+				fmt.Fprintln(log, "Worker sync unavailable; preserving local state")
+				failed = true
+			}
+		}
+		if !p.ExecuteAllowed() {
+			return fmt.Errorf("capability denied: jobs.execute")
+		}
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+	}
+}
+
+func (j *journal) accept(response connection.JobsResponse) error {
+	if response.ACK != nil {
+		r := j.state.Current
+		if r == nil || response.ACK.AttemptID != r.Report.AttemptID || response.ACK.Seq != r.Report.Event.Seq {
+			return fmt.Errorf("unexpected worker ACK; reconciliation required")
+		}
+		if err := j.write(".done-"+r.Assignment.AttemptID+".json", r); err != nil {
+			return err
+		}
+		j.state.Current = nil
+		if err := j.save(); err != nil {
+			return err
+		}
+	}
+	a := response.Assignment
+	if a == nil {
+		return nil
+	}
+	if !connection.ValidJobAssignment(a, j.state.Generation) {
+		return fmt.Errorf("invalid assignment; reconciliation required")
+	}
+	if r := j.state.Current; r != nil {
+		if !sameAssignment(r.Assignment, *a) {
+			return fmt.Errorf("assignment changed before ACK; reconciliation required")
+		}
+		return nil
+	}
+	var r record
+	err := j.read(".done-"+a.AttemptID+".json", &r)
+	if err == nil {
+		if !validRecord(&r, j.state.Generation) || !sameAssignment(r.Assignment, *a) {
+			return fmt.Errorf("completed assignment changed; reconciliation required")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("invalid assignment history; reconciliation required")
+	}
+
+	if err != nil {
+		if err := j.checkHistoryBound(); err != nil {
+			return err
+		}
+		if a.State != "assigned" || a.AcknowledgedSeq != 0 || a.WorkerGeneration != j.state.Generation {
+			return fmt.Errorf("unknown assignment; reconciliation required")
+		}
+		r = record{Assignment: *a, Report: connection.JobReport{AttemptID: a.AttemptID, SpecHash: a.SpecHash, AssignmentToken: a.AssignmentToken, Event: connection.JobEvent{Seq: 1, State: "failed", FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Reason: "RUNNER_NOT_IMPLEMENTED"}}}
+	}
+	j.state.Current = &r
+	return j.save() // Persist the report before any subsequent sync can acknowledge receipt.
+}

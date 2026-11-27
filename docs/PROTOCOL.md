@@ -101,3 +101,11 @@ Content-Type: application/json
 Ручной и SSH-bootstrap используют один `scripts/bootstrap.sh` из собранного комплекта. SSH передаёт тот же enrollment через stdin, не меняя API и жизненный цикл. SSH-доставку организует backend Kladit с проверкой host key; отдельный SSH transport в агенте не нужен. Bearer identity не является proof-of-possession.
 
 Начиная с агента 0.4.0 каждая NVIDIA GPU передаёт опциональный `uuid` из `nvidia-smi`. Индекс не является устойчивой идентичностью. Без UUID доступна только live-телеметрия; backend не должен объединять историю разных карт по индексу. Остальные имена, единицы и частота snapshots не меняются.
+
+## Opt-in worker foundation (Jobs step 3)
+
+A separate `worker` command/unit uses the application's outgoing Jobs sync v1 without
+changing metrics or enrollment responses. It always advertises `preflight_ok:false`;
+container execution is not implemented. Local worker policy, private generation and
+assignment journal, precise fail-closed behavior, install/verification and progress:
+[WORKER.md](WORKER.md). Do not enable backend Jobs execution based only on this step.

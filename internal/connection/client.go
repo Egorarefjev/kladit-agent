@@ -86,3 +86,6 @@ func (c *Client) Send(ctx context.Context, snapshot metrics.Snapshot) error {
 	}
 	return nil
 }
+
+// Close releases idle connections when a long-lived worker stops.
+func (c *Client) Close() { c.http.CloseIdleConnections() }

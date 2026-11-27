@@ -45,6 +45,8 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 			printHelp(out)
 		}
 		return 0
+	case "worker":
+		return runWorker(ctx, args[1:], stderr)
 	case "enroll":
 		flags := flag.NewFlagSet("enroll", flag.ContinueOnError)
 		flags.SetOutput(stderr)
@@ -70,10 +72,7 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	var configPath, tokenPath string
 	if command == "send" {
 		flags.StringVar(&configPath, "config", "/etc/kladit-agent/connection.json", "Connection config file")
-		defaultToken := "/etc/kladit-agent/token"
-		if directory := os.Getenv("CREDENTIALS_DIRECTORY"); directory != "" {
-			defaultToken = filepath.Join(directory, "agent-token")
-		}
+		defaultToken := defaultTokenPath()
 		flags.StringVar(&tokenPath, "token-file", defaultToken, "Private machine token file")
 	}
 	if err := flags.Parse(args[1:]); err != nil {
@@ -152,8 +151,16 @@ func printHelp(out io.Writer) {
 
 Usage:
   kladit-agent enroll --url HTTPS_URL --directory PATH < enrollment-token
+  kladit-agent worker [--policy PATH] [--config PATH] [--token-file PATH] [--state PATH] [--docker-socket PATH] [--check]
   kladit-agent version
   kladit-agent metrics [--policy PATH]
   kladit-agent policy-check [--policy PATH]
   kladit-agent send [--policy PATH] [--config PATH] [--token-file PATH]`)
+}
+
+func defaultTokenPath() string {
+	if directory := os.Getenv("CREDENTIALS_DIRECTORY"); directory != "" {
+		return filepath.Join(directory, "agent-token")
+	}
+	return "/etc/kladit-agent/token"
 }

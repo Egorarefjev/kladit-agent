@@ -16,7 +16,7 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 cd "$root"
 mkdir -p "$stage/bin" "$stage/scripts" "$stage/packaging"
-cp scripts/install.sh scripts/uninstall.sh scripts/update.sh "$stage/scripts/"
+cp scripts/install.sh scripts/uninstall.sh scripts/update.sh scripts/worker-install.sh "$stage/scripts/"
 cp -R packaging/systemd "$stage/packaging/"
 cp LICENSE "$stage/"
 for arch in amd64 arm64; do

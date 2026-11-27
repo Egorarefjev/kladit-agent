@@ -48,6 +48,17 @@ jobs:
           class MetricsReceiver(BaseHTTPRequestHandler):
               def do_POST(self):
                   payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                  if self.path == "/api/v1/agent/jobs/sync":
+                      assert self.headers.get("Authorization") == "Bearer " + "a" * 43
+                      assert payload["version"] == 1 and payload["preflight_ok"] is False
+                      assert payload["execute_allowed"] is True
+                      Path("worker-generation").write_text(payload["worker_generation"])
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.end_headers()
+                      self.wfile.write(json.dumps({"version": 1, "worker_generation": payload["worker_generation"],
+                                                 "enabled": False, "ack": None, "assignment": None}).encode())
+                      return
                   if (self.path == "/api/v1/agent/metrics"
                       and self.headers.get("Authorization") == "Bearer " + "a" * 43
                       and payload["version"] == 1
@@ -92,6 +103,7 @@ jobs:
             systemctl is-enabled kladit-agent.timer
             if [ "$cycle" = 1 ]; then
               sudo sh "$source/tests/update-systemd.sh" "$bundle" "$fixture"
+              sudo sh "$source/tests/worker-systemd.sh" "$bundle" "$fixture"
             fi
             sudo systemctl stop kladit-agent.timer kladit-agent.service
             test ! -e /run/kladit-agent

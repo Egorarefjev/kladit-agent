@@ -48,15 +48,11 @@ func Collect(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	data, err := os.ReadFile("/proc/meminfo")
+	total, available, err := ReadMemory()
 	if err != nil {
 		return Snapshot{}, err
 	}
-	total, available, err := parseMemory(string(data))
-	if err != nil {
-		return Snapshot{}, err
-	}
-	data, err = os.ReadFile("/proc/uptime")
+	data, err := os.ReadFile("/proc/uptime")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -148,4 +144,13 @@ func parseMemory(data string) (uint64, uint64, error) {
 		return 0, 0, fmt.Errorf("missing or inconsistent memory counters")
 	}
 	return total, available, nil
+}
+
+// ReadMemory reads current host RAM without sampling CPU or invoking GPU commands.
+func ReadMemory() (uint64, uint64, error) {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0, err
+	}
+	return parseMemory(string(data))
 }
