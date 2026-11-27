@@ -159,7 +159,7 @@ func validRecord(r *record, generation string) bool {
 	a := r.Assignment
 	p := r.Report
 	_, err := time.Parse(time.RFC3339Nano, p.Event.FinishedAt)
-	return err == nil && connection.ValidJobAssignment(&a, generation) && a.WorkerGeneration == generation && p.AttemptID == a.AttemptID && p.SpecHash == a.SpecHash && p.AssignmentToken == a.AssignmentToken && p.Event.Seq == 1 && p.Event.State == "failed" && p.Event.Reason == "RUNNER_NOT_IMPLEMENTED"
+	return err == nil && a.State == "assigned" && a.AcknowledgedSeq == 0 && connection.ValidJobAssignment(&a, generation) && a.WorkerGeneration == generation && p.AttemptID == a.AttemptID && p.SpecHash == a.SpecHash && p.AssignmentToken == a.AssignmentToken && p.Event.Seq == 1 && p.Event.State == "failed" && p.Event.Reason == "RUNNER_NOT_IMPLEMENTED"
 }
 
 func sameAssignment(a, b connection.JobAssignment) bool {

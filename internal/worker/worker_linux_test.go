@@ -108,7 +108,7 @@ func TestJournalRejectsLostUnsafeOrUnknownState(t *testing.T) {
 			t.Fatal("symlink state accepted")
 		}
 	})
-	for _, mode := range []string{"symlink-file", "public-file", "unknown-state"} {
+	for _, mode := range []string{"symlink-file", "public-file", "unknown-state", "unknown-attempt"} {
 		t.Run(mode, func(t *testing.T) {
 			path := privateDir(t)
 			j, err := openJournal(path)
@@ -125,6 +125,17 @@ func TestJournalRejectsLostUnsafeOrUnknownState(t *testing.T) {
 				}
 			case "public-file":
 				if err = os.Chmod(state, 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "unknown-attempt":
+				a := assignmentFixture(j.state.Generation)
+				a.State = "running"
+				j.state.Current = &record{Assignment: a, Report: connection.JobReport{AttemptID: a.AttemptID, SpecHash: a.SpecHash, AssignmentToken: a.AssignmentToken, Event: connection.JobEvent{Seq: 1, State: "failed", Reason: "RUNNER_NOT_IMPLEMENTED", FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)}}}
+				data, encodeErr := json.Marshal(j.state)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				if err = os.WriteFile(state, data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "unknown-state":
