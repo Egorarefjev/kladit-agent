@@ -18,6 +18,7 @@ jobs:
           cache: false
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go test -race ./...
+      - run: go vet ./...
       - run: for script in scripts/*.sh; do sh -n "$script"; done
       - run: sh tests/package-version.sh
       - run: sh scripts/package.sh "$RUNNER_TEMP/bundles" "https://kladit.example/agent/$TEST_TAG" "$TEST_TAG"
@@ -102,8 +103,8 @@ jobs:
             test -f received
             systemctl is-enabled kladit-agent.timer
             if [ "$cycle" = 1 ]; then
-              sudo sh "$source/tests/update-systemd.sh" "$bundle" "$fixture"
               sudo sh "$source/tests/worker-systemd.sh" "$bundle" "$fixture"
+              sudo sh "$source/tests/update-systemd.sh" "$bundle" "$fixture"
             fi
             sudo systemctl stop kladit-agent.timer kladit-agent.service
             test ! -e /run/kladit-agent
