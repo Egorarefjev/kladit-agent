@@ -15,7 +15,7 @@ A merge here does not publish a release or install anything on user machines.
 
 | Step | PR | Status | Decisions | Next |
 | --- | --- | --- | --- | --- |
-| 3 | PR_LINK_PENDING | Awaiting merge into agent dev | Separate local permission/unit; stable journal generation; read-only preflight; execution disabled; legacy install untouched | 4: Docker create/start/inspect and reconciliation, after confirmed merge |
+| 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Awaiting merge into agent dev | Separate local permission/unit; stable journal generation; read-only preflight; execution disabled; legacy install untouched | 4: Docker create/start/inspect and reconciliation, after confirmed merge |
 
 After agent PR merges, update this row in the next agent PR. The next application
 PR updates the canonical application journal with merged agent steps; do not open a
