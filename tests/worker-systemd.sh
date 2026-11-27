@@ -37,7 +37,7 @@ done
 if worker_update_result=$(sh "$bundle/scripts/update.sh" 2>&1); then exit 1; fi
 printf '%s\n' "$worker_update_result" | grep -q 'Worker profile installed'
 if worker_remove_result=$(sh /usr/local/lib/kladit-agent/uninstall.sh --confirm --purge 2>&1); then exit 1; fi
-printf '%s\n' "$worker_remove_result" | grep -q 'Worker profile installed' 
+printf '%s\n' "$worker_remove_result" | grep -q 'Worker profile installed'
 systemctl is-active --quiet kladit-agent.timer
 test "$before" = "$(sha256sum /etc/kladit-agent/policy.json /etc/kladit-agent/token)"
 systemctl disable --now kladit-worker.service
