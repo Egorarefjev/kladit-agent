@@ -144,6 +144,16 @@ before replacing the shared binary or stopping metrics. Safe worker update/remov
 active-state reconciliation and retained output handling belong to later lifecycle
 steps; no blind state wipe or container stop is implemented in this foundation.
 
+## Code boundaries
+
+Within `internal/worker`, `worker_linux.go` owns startup and the sync loop,
+`state_linux.go` owns assignment/ACK transitions and record validation,
+`journal_linux.go` owns private filesystem persistence and locking, and
+`preflight_linux.go` owns read-only runtime checks. These are files in one package,
+not additional service/repository layers. Spec comparison shares one JSON decoder
+with `UseNumber`, preserving large integers and ignoring object-key order.
+The architecture review keeps step 3 and its execution-disabled behavior unchanged.
+
 ## Verification boundary
 
 Go tests cover policy deny/duplicates/limits, HTTPS sync and sanitized/bounded errors,

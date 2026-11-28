@@ -302,3 +302,26 @@ func TestSupervisorRechecksPermissionAndReleasesLock(t *testing.T) {
 	}
 	j.Close()
 }
+
+func TestAssignmentSpecComparison(t *testing.T) {
+	a := assignmentFixture("12345678-1234-4234-8234-123456789abc")
+	a.Spec = json.RawMessage(`{"count":9007199254740993,"argv":["/bin/true"]}`)
+	for _, test := range []struct {
+		name string
+		spec string
+		same bool
+	}{
+		{"key-order", `{"argv":["/bin/true"],"count":9007199254740993}`, true},
+		{"large-integer", `{"count":9007199254740992,"argv":["/bin/true"]}`, false},
+		{"changed-argv", `{"count":9007199254740993,"argv":["/bin/false"]}`, false},
+		{"invalid-json", `{"count":`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			b := a
+			b.Spec = json.RawMessage(test.spec)
+			if sameAssignment(a, b) != test.same || sameAssignment(b, a) != test.same {
+				t.Fatal("incorrect assignment comparison")
+			}
+		})
+	}
+}

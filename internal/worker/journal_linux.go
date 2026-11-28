@@ -11,21 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
-
-	"github.com/Egorarefjev/kladit-agent/internal/connection"
 )
-
-type record struct {
-	Assignment connection.JobAssignment `json:"assignment"`
-	Report     connection.JobReport     `json:"report"`
-}
-
-type journalState struct {
-	Version    int     `json:"version"`
-	Generation string  `json:"generation"`
-	Current    *record `json:"current"`
-}
 
 type journal struct {
 	root  *os.Root
@@ -154,34 +140,6 @@ func (j *journal) write(name string, value any) error {
 
 func (j *journal) save() error  { return j.write("state.json", j.state) }
 func (j *journal) Close() error { return errors.Join(j.lock.Close(), j.root.Close()) }
-
-func validRecord(r *record, generation string) bool {
-	a := r.Assignment
-	p := r.Report
-	_, err := time.Parse(time.RFC3339Nano, p.Event.FinishedAt)
-	return err == nil && a.State == "assigned" && a.AcknowledgedSeq == 0 && connection.ValidJobAssignment(&a, generation) && a.WorkerGeneration == generation && p.AttemptID == a.AttemptID && p.SpecHash == a.SpecHash && p.AssignmentToken == a.AssignmentToken && p.Event.Seq == 1 && p.Event.State == "failed" && p.Event.Reason == "RUNNER_NOT_IMPLEMENTED"
-}
-
-func sameAssignment(a, b connection.JobAssignment) bool {
-	// Compare JSON values, not object-key order. This is not the backend's spec_hash algorithm.
-	var first, second any
-	d := json.NewDecoder(bytes.NewReader(a.Spec))
-	d.UseNumber()
-	e := json.NewDecoder(bytes.NewReader(b.Spec))
-	e.UseNumber()
-	if d.Decode(&first) != nil || e.Decode(&second) != nil {
-		return false
-	}
-	x, err := json.Marshal(first)
-	if err != nil {
-		return false
-	}
-	y, err := json.Marshal(second)
-	if err != nil {
-		return false
-	}
-	return a.AttemptID == b.AttemptID && a.JobID == b.JobID && a.WorkerGeneration == b.WorkerGeneration && a.SpecHash == b.SpecHash && a.AssignmentToken == b.AssignmentToken && bytes.Equal(x, y)
-}
 
 func (j *journal) checkHistoryBound() error {
 	directory, err := j.root.Open(".")
