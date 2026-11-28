@@ -17,7 +17,7 @@ for path in /etc/kladit-agent /usr/local/lib/kladit-agent; do
     mode=$(stat -c %a "$path")
     [ "$mode" = 755 ] || fail 'Agent directories must not be writable by another user.'
 done
-for path in /etc/kladit-agent/token /etc/kladit-agent/connection.json /usr/local/lib/kladit-agent/kladit-agent; do
+for path in /etc/kladit-agent/token /etc/kladit-agent/connection.json /usr/local/lib/kladit-agent/kladit-agent /usr/local/lib/kladit-agent/uninstall.sh; do
     [ -f "$path" ] && [ ! -L "$path" ] && [ "$(stat -c %u "$path")" -eq 0 ] || fail 'Expected existing connected agent credentials/binary.'
 done
 token_mode=$(stat -c %a /etc/kladit-agent/token)
@@ -25,6 +25,7 @@ token_mode=$(stat -c %a /etc/kladit-agent/token)
 [ "$(stat -c %a /etc/kladit-agent/connection.json)" = 644 ] || fail 'Worker needs a root-owned readable connection config.'
 [ "$(stat -c %a /usr/local/lib/kladit-agent/kladit-agent)" = 755 ] || fail 'Worker needs an executable root-owned agent binary.'
 [ -f "$root/packaging/systemd/kladit-worker.service" ] || fail 'Missing worker unit.'
+[ -f "$root/scripts/uninstall.sh" ] || fail 'Missing worker-aware uninstaller.'
 for path in /etc/kladit-agent/worker-policy.json /etc/systemd/system/kladit-worker.service /var/lib/kladit-worker; do
     [ ! -e "$path" ] && [ ! -L "$path" ] || fail 'Worker profile/state already exists; automatic replacement is not supported.'
 done
@@ -38,6 +39,8 @@ if [ "${2:-}" = --check ]; then
     exit 0
 fi
 printf '%s\n' 'Docker socket access grants host-level authority. Enable only for your own trusted tasks on a dedicated machine.' >&2
+# Binary-only updates leave the installed helper unchanged. Refresh it before worker activation.
+install -o root -g root -m 0755 "$root/scripts/uninstall.sh" /usr/local/lib/kladit-agent/uninstall.sh
 useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin kladit-worker
 # The explicit unit grants Docker group membership only to this worker service.
 cat > /etc/kladit-agent/worker-policy.json <<'POLICY'

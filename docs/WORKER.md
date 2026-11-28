@@ -43,6 +43,9 @@ availability or successful execution. The second refuses existing worker users,
 units, policies or state instead of overwriting them. It creates dedicated static
 user `kladit-worker` with no login/home and installs `kladit-worker.service` with
 `SupplementaryGroups=docker`. The metrics user/unit gains no Docker membership.
+Before activation it refreshes the installed uninstaller from this bundle, since
+binary-only updates leave older helpers unchanged. `--check` leaves that helper
+untouched. This ensures the documented uninstall command refuses an active worker.
 It reuses the existing machine identity through systemd `LoadCredential`, copied as
 0600 into the worker's private runtime directory; no token is passed in argv/env.
 

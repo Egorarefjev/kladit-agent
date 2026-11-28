@@ -5,10 +5,22 @@ bundle=$1
 fixture=$2
 ca=/run/kladit-agent-ci-ca.pem
 before=$(sha256sum /etc/kladit-agent/policy.json /etc/kladit-agent/token)
+# Simulate an earlier installed uninstaller retained by a binary-only update.
+python3 - <<'LEGACY'
+from pathlib import Path
+p = Path('/usr/local/lib/kladit-agent/uninstall.sh')
+s = p.read_text()
+start = s.index('if [ -e /etc/systemd/system/kladit-worker.service ]')
+end = s.index('systemctl disable --now kladit-agent.timer', start)
+p.write_text(s[:start] + s[end:])
+LEGACY
+legacy_helper=$(sha256sum /usr/local/lib/kladit-agent/uninstall.sh)
 sh "$bundle/scripts/worker-install.sh" --allow-docker-worker --check
+test "$legacy_helper" = "$(sha256sum /usr/local/lib/kladit-agent/uninstall.sh)"
 install -d /etc/systemd/system/kladit-worker.service.d
 printf '[Service]\nEnvironment=SSL_CERT_FILE=%s\n' "$ca" > /etc/systemd/system/kladit-worker.service.d/ci.conf
 sh "$bundle/scripts/worker-install.sh" --allow-docker-worker
+cmp "$bundle/scripts/uninstall.sh" /usr/local/lib/kladit-agent/uninstall.sh
 for cycle in 1 2; do
     rm -f "$fixture/worker-generation"
     systemctl restart kladit-worker.service
