@@ -85,7 +85,9 @@ func Run(ctx context.Context, options Options) error {
 		}
 		p, policyErr = policy.LoadWorker(options.PolicyPath)
 		allowed := policyErr == nil && p.ExecuteAllowed()
-		if !allowed && notifiedDenied && (j.state.Current == nil || (j.stopped() && j.state.Current.Runtime.StopReason == "" && j.state.Current.Acked && j.state.Current.Report.Event.State == "finalizing")) {
+		r := j.state.Current
+		settled := r == nil || (r.Runtime != nil && j.stopped() && r.Runtime.StopReason == "" && r.Acked && r.Report.Event.State == "finalizing")
+		if !allowed && notifiedDenied && settled {
 			if policyErr != nil {
 				return policyErr
 			}
