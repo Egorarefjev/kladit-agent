@@ -68,6 +68,7 @@ type containerInfo struct {
 	Image  string
 	Config struct{ Labels map[string]string }
 	State  struct {
+		Error      string
 		Status     string
 		Running    bool
 		StartedAt  string

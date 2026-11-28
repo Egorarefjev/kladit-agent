@@ -9,7 +9,7 @@ application `c701b3e`, agent `30cb807`. Feature PRs target agent dev.
 | Step | PR | Status | Decisions | Next |
 | --- | --- | --- | --- | --- |
 | 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Merged in dev, bcca01a | Separate unit/policy, stable generation, private journal; metrics untouched | 4 |
-| 4 | Current runner PR | Awaiting merge into dev | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5: backend log chunks, after confirmed merge |
+| 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Awaiting merge into dev | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5: backend log chunks, after confirmed merge |
 
 One PR at a time. Verify merges before continuing. The next application PR updates
 its canonical progress table with merged agent steps; no companion PR just for that

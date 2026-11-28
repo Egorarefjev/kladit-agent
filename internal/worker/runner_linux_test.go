@@ -266,7 +266,11 @@ func TestDockerNativeRunner(t *testing.T) {
 		}
 		r := j.state.Current
 		if r.Report.Event.State == "unknown" || r.Report.Event.State == "failed" {
-			t.Fatal("native execution failed", r.Report.Event.State, r.Report.Event.Reason)
+			c, inspectErr := d.inspect(context.Background(), containerName(r))
+			if inspectErr == nil {
+				t.Fatalf("native execution failed %s %s: Docker status=%s error=%s", r.Report.Event.State, r.Report.Event.Reason, c.State.Status, c.State.Error)
+			}
+			t.Fatal("native execution failed", r.Report.Event.State, r.Report.Event.Reason, inspectErr)
 		}
 		if r.Report.Event.State == "finalizing" {
 			if r.Report.Event.ExitCode == nil || *r.Report.Event.ExitCode != 0 {
