@@ -27,15 +27,12 @@ func (j *journal) noteStop(reason string) error {
 	return j.save()
 }
 func (j *journal) control(a *connection.JobAssignment, enabled bool) error {
-	if a == nil {
-		return nil
-	}
 	reason := ""
-	if a.CancelRequested {
+	if a != nil && a.CancelRequested {
 		reason = "CANCEL_REQUESTED"
 	} else if !enabled {
 		reason = "EXECUTION_DISABLED"
-	} else if a.StopReason != nil {
+	} else if a != nil && a.StopReason != nil {
 		switch *a.StopReason {
 		case "CANCEL_REQUESTED", "EXECUTION_DISABLED", "PREPARATION_TIMEOUT":
 			reason = *a.StopReason

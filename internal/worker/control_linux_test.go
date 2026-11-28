@@ -114,6 +114,28 @@ func TestStopPreservesPendingReportAndFirstReasonAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestPolicyStopIntentSurvivesUnavailableDocker(t *testing.T) {
+	j, options, _ := runnerFixture(t, "registry.example/jobs@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	defer j.Close()
+	if err := os.WriteFile(options.PolicyPath, []byte(`{"version":99}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	d := newDocker("/missing/docker.sock")
+	defer d.close()
+	poll(t, j, d, options)
+	if j.state.Current.Runtime.DesiredStop != "EXECUTION_DISABLED" || j.stopped() {
+		t.Fatal("lost policy stop or falsely confirmed exit")
+	}
+	// Backend disable remains authoritative even if no assignment is repeated.
+	j.state.Current.Runtime.DesiredStop = ""
+	if err := j.control(nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if j.state.Current.Runtime.DesiredStop != "EXECUTION_DISABLED" {
+		t.Fatal("ignored disable without assignment")
+	}
+}
+
 func TestTimeoutAndPreparationStopWithoutAPI(t *testing.T) {
 	j, options, _, d, f := activeFixture(t)
 	defer j.Close()

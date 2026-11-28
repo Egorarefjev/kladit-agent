@@ -11,7 +11,7 @@ for this stage at the owner's request. Feature PRs target agent dev.
 | 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Merged in dev, bcca01a | Separate unit/policy, stable generation, private journal; metrics untouched | 4 |
 | 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Merged in dev, 369479b | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5 |
 | 5 | [app #64](https://github.com/Egorarefjev/kladit/pull/64) | Merged in dev, c80508b | Bounded backend log chunks | 6a |
-| 6a | [worker cancellation PR](https://github.com/Egorarefjev/kladit-agent/compare/dev...feat/worker-cancel-timeout) | Awaiting merge into dev | Local cancel/timeout independent of sync; persisted TERM/KILL and exit evidence; readiness remains false | 6b: bounded durable log delivery, after confirmed merge |
+| 6a | [agent #17](https://github.com/Egorarefjev/kladit-agent/pull/17) | Awaiting merge into dev | Local cancel/timeout independent of sync; persisted TERM/KILL and exit evidence; readiness remains false | 6b: bounded durable log delivery, after confirmed merge |
 
 One PR at a time. Verify merges before continuing. After reviewing step 4, future scopes should be split into independently complete
 PRs before implementation where possible; no chain of unfinished dependent PRs.

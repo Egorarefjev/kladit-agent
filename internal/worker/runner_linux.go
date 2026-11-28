@@ -86,6 +86,12 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	if run.Phase == "exited" {
 		return nil
 	}
+	p, policyErr := policy.LoadWorker(options.PolicyPath)
+	if policyErr != nil || !p.ExecuteAllowed() {
+		if err := j.noteStop("EXECUTION_DISABLED"); err != nil {
+			return err
+		}
+	}
 	c, err := d.inspect(ctx, containerName(r))
 	if err == nil && !ownsContainer(r, c) {
 		return j.markUnknown("CONTAINER_IDENTITY_MISMATCH")
@@ -96,7 +102,6 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	} else if err != nil {
 		return nil
 	}
-	p, policyErr := policy.LoadWorker(options.PolicyPath)
 	if err := j.enforce(ctx, d, c, policyErr == nil && p.ExecuteAllowed()); err != nil {
 		return err
 	}
