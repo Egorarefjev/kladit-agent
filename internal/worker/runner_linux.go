@@ -20,13 +20,19 @@ var imageID = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 var containerID = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type execution struct {
-	Phase          string `json:"phase"`
-	TimeoutSeconds uint64 `json:"timeout_seconds,omitempty"`
-	UnknownReason  string `json:"unknown_reason,omitempty"`
-	ContainerID    string `json:"container_id,omitempty"`
-	ImageID        string `json:"image_id,omitempty"`
-	StartedAt      string `json:"started_at,omitempty"`
-	Deadline       string `json:"deadline,omitempty"`
+	DesiredStop     string           `json:"desired_stop,omitempty"`
+	StopReason      string           `json:"stop_reason,omitempty"`
+	StopRequestedAt string           `json:"stop_requested_at,omitempty"`
+	TermSentAt      string           `json:"term_sent_at,omitempty"`
+	TermAccepted    bool             `json:"term_accepted,omitempty"`
+	Exit            *exitObservation `json:"exit,omitempty"`
+	Phase           string           `json:"phase"`
+	TimeoutSeconds  uint64           `json:"timeout_seconds,omitempty"`
+	UnknownReason   string           `json:"unknown_reason,omitempty"`
+	ContainerID     string           `json:"container_id,omitempty"`
+	ImageID         string           `json:"image_id,omitempty"`
+	StartedAt       string           `json:"started_at,omitempty"`
+	Deadline        string           `json:"deadline,omitempty"`
 }
 
 func containerName(r *record) string { return "kladit-" + r.Assignment.AttemptID }
@@ -71,15 +77,12 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	if r == nil || r.Runtime == nil || terminalState(r.Report.Event.State) {
 		return nil
 	}
+	if advanced, err := j.advanceExit(); advanced || err != nil {
+		return err
+	}
 	relative := filepath.Join("jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output")
 	output := filepath.Join(options.StatePath, relative)
 	run := r.Runtime
-	if run.Phase == "unknown" {
-		if r.Acked && r.Report.Event.State != "unknown" {
-			return j.emit("unknown", run.UnknownReason, nil)
-		}
-		return nil
-	}
 	if run.Phase == "exited" {
 		return nil
 	}
@@ -91,6 +94,19 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	if e, ok := err.(*dockerError); ok && e.status == 404 {
 		missing = true
 	} else if err != nil {
+		return nil
+	}
+	p, policyErr := policy.LoadWorker(options.PolicyPath)
+	if err := j.enforce(ctx, d, c, policyErr == nil && p.ExecuteAllowed()); err != nil {
+		return err
+	}
+	if advanced, err := j.advanceExit(); advanced || err != nil {
+		return err
+	}
+	if run.Phase == "unknown" {
+		if r.Acked && r.Report.Event.State != "unknown" {
+			return j.emit("unknown", run.UnknownReason, nil)
+		}
 		return nil
 	}
 	if !missing {
@@ -134,14 +150,13 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 		}
 		return nil
 	}
-	if !r.Acked {
+	if !r.Acked || run.StopReason != "" || run.DesiredStop != "" {
 		return nil
 	}
 	if control == nil || control.State != "preparing" || control.AcknowledgedSeq != r.Report.Event.Seq || !sameAssignment(r.Assignment, *control) || !enabled || control.CancelRequested || control.StopReason != nil || control.StartPermitExpiresAt == nil || time.Now().After(*control.StartPermitExpiresAt) || time.Now().After(control.PrepareDeadlineAt) {
 		return nil
 	}
-	p, err := policy.LoadWorker(options.PolicyPath)
-	if err != nil || !p.ExecuteAllowed() {
+	if policyErr != nil || !p.ExecuteAllowed() {
 		return nil
 	}
 	spec, err := parseSpec(r.Assignment, p)
@@ -222,7 +237,9 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 		return err
 	}
 	// No retry, including ambiguous transport failure. Next tick can only inspect.
-	_ = d.request(ctx, http.MethodPost, "/containers/"+run.ContainerID+"/start", nil, nil)
+	startCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_ = d.request(startCtx, http.MethodPost, "/containers/"+run.ContainerID+"/start", nil, nil)
 	return nil
 }
 

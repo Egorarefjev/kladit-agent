@@ -279,19 +279,7 @@ func TestSupervisorRechecksPermissionAndReleasesLock(t *testing.T) {
 		json.NewEncoder(w).Encode(connection.JobsResponse{Version: 1, WorkerGeneration: request.WorkerGeneration})
 	}))
 	defer server.Close()
-	cert := filepath.Join(root, "ca.pem")
-	if err := os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SSL_CERT_FILE", cert)
-	config := filepath.Join(root, "connection.json")
-	token := filepath.Join(root, "token")
-	if err := os.WriteFile(config, []byte(`{"endpoint":"`+server.URL+`/api/v1/agent/metrics"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(token, []byte(strings.Repeat("a", 43)), 0600); err != nil {
-		t.Fatal(err)
-	}
+	config, token := connectionFixture(t, root, server)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -342,4 +330,22 @@ func TestAssignmentSpecComparison(t *testing.T) {
 			}
 		})
 	}
+}
+
+func connectionFixture(t *testing.T, root string, server *httptest.Server) (string, string) {
+	t.Helper()
+	cert := filepath.Join(root, "ca.pem")
+	if err := os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", cert)
+	config := filepath.Join(root, "connection.json")
+	token := filepath.Join(root, "token")
+	if err := os.WriteFile(config, []byte(`{"endpoint":"`+server.URL+`/api/v1/agent/metrics"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(token, []byte(strings.Repeat("a", 43)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return config, token
 }
