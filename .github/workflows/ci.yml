@@ -19,6 +19,12 @@ jobs:
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Native Docker runner
+        run: |
+          docker pull docker.io/library/busybox:1.37.0
+          digest=$(docker image inspect docker.io/library/busybox:1.37.0 --format '{{index .RepoDigests 0}}')
+          case "$digest" in busybox@*) digest="docker.io/library/$digest" ;; esac
+          KLADIT_DOCKER_TEST_IMAGE="$digest" go test -race ./internal/worker -run '^TestDockerNativeRunner$' -count=1
       - run: for script in scripts/*.sh; do sh -n "$script"; done
       - run: sh tests/package-version.sh
       - run: sh scripts/package.sh "$RUNNER_TEMP/bundles" "https://kladit.example/agent/$TEST_TAG" "$TEST_TAG"

@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Worker is a separate local opt-in profile. The metrics policy is unchanged.
 type Worker struct {
+	GPUs               []string        `json:"gpus,omitempty"`
+	GPUIdleMemoryBytes uint64          `json:"gpu_idle_memory_bytes,omitempty"`
 	Version            int             `json:"version"`
 	Capabilities       map[string]bool `json:"capabilities"`
 	Limits             WorkerLimits    `json:"limits"`
@@ -43,7 +46,7 @@ func parseWorker(data []byte) (Worker, error) {
 		return Worker{}, fmt.Errorf("invalid worker policy")
 	}
 	for key := range fields {
-		if key != "version" && key != "capabilities" && key != "limits" && key != "min_free_disk_bytes" && key != "min_free_memory_bytes" {
+		if key != "gpus" && key != "gpu_idle_memory_bytes" && key != "version" && key != "capabilities" && key != "limits" && key != "min_free_disk_bytes" && key != "min_free_memory_bytes" {
 			return Worker{}, fmt.Errorf("unknown worker policy field")
 		}
 	}
@@ -68,6 +71,21 @@ func parseWorker(data []byte) (Worker, error) {
 	var p Worker
 	if json.Unmarshal(data, &p) != nil || p.Version != 1 || p.Limits.CPUMillis == 0 || p.Limits.CPUMillis > 9007199254740991 || p.Limits.MemoryBytes == 0 || p.Limits.MemoryBytes > 9007199254740991 || p.Limits.TimeoutSeconds == 0 || p.Limits.TimeoutSeconds > 86400 || p.MinFreeDiskBytes == 0 || p.MinFreeDiskBytes > 9007199254740991 || p.MinFreeMemoryBytes == 0 || p.MinFreeMemoryBytes > 9007199254740991 {
 		return Worker{}, fmt.Errorf("invalid worker policy or limits")
+	}
+	if len(p.GPUs) > 16 || p.GPUIdleMemoryBytes > 1073741824 {
+		return Worker{}, fmt.Errorf("invalid GPU policy")
+	}
+	seen := make(map[string]bool)
+	for _, id := range p.GPUs {
+		if len(id) < 5 || len(id) > 96 || !strings.HasPrefix(id, "GPU-") || seen[id] {
+			return Worker{}, fmt.Errorf("invalid GPU policy")
+		}
+		seen[id] = true
+		for _, c := range id {
+			if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return Worker{}, fmt.Errorf("invalid GPU policy")
+			}
+		}
 	}
 	return p, nil
 }
