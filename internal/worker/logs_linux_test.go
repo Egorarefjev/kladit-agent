@@ -274,7 +274,7 @@ func verifyNativeLogs(t *testing.T, d *dockerClient, r *record) {
 }
 
 func TestLogTimestampBoundaryCompactsReplay(t *testing.T) {
-	first := logFrame(1, logStamp, []byte("first"))
+	first := logFrame(1, logStamp, bytes.Repeat([]byte("x"), 8192))
 	stamp2 := "2026-11-28T12:00:01.000000002Z"
 	second := logFrame(1, stamp2, []byte("second"))
 	l := logState{}
@@ -282,7 +282,7 @@ func TestLogTimestampBoundaryCompactsReplay(t *testing.T) {
 		if err := readLogChunk(bytes.NewReader(append(append([]byte{}, first...), second...)), &l, false); err != nil || l.Pending == nil {
 			t.Fatal("missing boundary data", err)
 		}
-		if string(l.Pending.Data) != []string{"first", "second"}[i] {
+		if string(l.Pending.Data) != []string{strings.Repeat("x", 8192), "second"}[i] {
 			t.Fatal("changed order")
 		}
 		l.Seq = l.Pending.Seq
@@ -293,5 +293,16 @@ func TestLogTimestampBoundaryCompactsReplay(t *testing.T) {
 	}
 	if err := readLogChunk(bytes.NewReader(second), &l, true); err != nil || !l.Cursors[0].EOF || l.Pending != nil {
 		t.Fatal("inclusive replay duplicated boundary", err)
+	}
+}
+
+func TestLogsBatchShortLines(t *testing.T) {
+	var snapshot []byte
+	for i := 0; i < 100; i++ {
+		snapshot = append(snapshot, logFrame(1, logStamp, []byte("line\n"))...)
+	}
+	l := logState{}
+	if err := readLogChunk(bytes.NewReader(snapshot), &l, true); err != nil || l.Pending == nil || string(l.Pending.Data) != strings.Repeat("line\n", 100) || !l.Cursors[0].EOF {
+		t.Fatal("short lines were not batched", err)
 	}
 }

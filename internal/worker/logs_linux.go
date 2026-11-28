@@ -85,69 +85,79 @@ func readLogChunk(src io.Reader, l *logState, exited bool) error {
 		c.Offset += int64(n)
 		return err
 	}
-	// Empty frames are bounded too, even for a hostile Docker response.
-	for c.Remaining == 0 {
-		if c.Offset+72 > logReadLimit {
-			l.truncate()
-			return nil
-		}
-		var header [8]byte
-		if err := read(header[:]); err != nil {
-			if errors.Is(err, io.EOF) {
-				c.EOF = exited
-				c.Hash = fmt.Sprintf("%x", h.Sum(nil))
+	data := make([]byte, 0, 8192)
+	for len(data) < 8192 {
+		if c.Remaining == 0 {
+			if c.Offset+72 > logReadLimit {
+				l.truncate()
 				return nil
 			}
-			return err
-		}
-		size := binary.BigEndian.Uint32(header[4:])
-		if header[0] != byte(l.Stream+1) || header[1] != 0 || header[2] != 0 || header[3] != 0 || size == 0 || size > 1<<20 {
-			l.truncate()
-			return nil
-		}
-		// timestamps=true supplies an RFC3339Nano prefix for each Docker message.
-		stamp := make([]byte, 0, 64)
-		for size > 0 && len(stamp) < 64 {
-			var b [1]byte
-			if err := read(b[:]); err != nil {
+			var header [8]byte
+			if err := read(header[:]); err != nil {
+				if errors.Is(err, io.EOF) {
+					c.EOF = exited
+					c.Hash = fmt.Sprintf("%x", h.Sum(nil))
+					break
+				}
 				return err
 			}
-			size--
-			if b[0] == ' ' {
-				break
+			size := binary.BigEndian.Uint32(header[4:])
+			if header[0] != byte(l.Stream+1) || header[1] != 0 || header[2] != 0 || header[3] != 0 || size == 0 || size > 1<<20 {
+				l.truncate()
+				return nil
 			}
-			stamp = append(stamp, b[0])
+			// timestamps=true supplies an RFC3339Nano prefix for each Docker message.
+			stamp := make([]byte, 0, 64)
+			for size > 0 && len(stamp) < 64 {
+				var b [1]byte
+				if err := read(b[:]); err != nil {
+					return err
+				}
+				size--
+				if b[0] == ' ' {
+					break
+				}
+				stamp = append(stamp, b[0])
+			}
+			if _, err := time.Parse(time.RFC3339Nano, string(stamp)); err != nil || size == 0 {
+				l.truncate()
+				return nil
+			}
+			if string(stamp) != c.Since {
+				// Only replay the current timestamp boundary, not the entire attempt.
+				// Multiple messages sharing a timestamp remain protected by one prefix hash.
+				c.Since = string(stamp)
+				h.Reset()
+				h.Write(header[:])
+				h.Write(stamp)
+				h.Write([]byte{' '})
+				c.Offset = int64(8 + len(stamp) + 1)
+			}
+			c.Remaining = size
 		}
-		if _, err := time.Parse(time.RFC3339Nano, string(stamp)); err != nil || size == 0 {
+		size := min(int(c.Remaining), 8192-len(data), logByteLimit-l.Bytes-len(data))
+		if (size == 0 && len(data) == 0) || l.Seq >= 16384 || c.Offset+int64(size) > logReadLimit {
 			l.truncate()
 			return nil
 		}
-		if string(stamp) != c.Since {
-			// Only replay the current timestamp boundary, not the entire attempt.
-			// Multiple messages sharing a timestamp remain protected by one prefix hash.
-			c.Since = string(stamp)
-			h.Reset()
-			h.Write(header[:])
-			h.Write(stamp)
-			h.Write([]byte{' '})
-			c.Offset = int64(8 + len(stamp) + 1)
+		if size == 0 {
+			break
 		}
-		c.Remaining = size
+		start := len(data)
+		data = append(data, make([]byte, size)...)
+		if err := read(data[start:]); err != nil {
+			return err
+		}
+		c.Remaining -= uint32(size)
 	}
-	size := min(int(c.Remaining), 8192, logByteLimit-l.Bytes)
-	if size == 0 || l.Seq >= 16384 || c.Offset+int64(size) > logReadLimit {
-		l.truncate()
+	c.Hash = fmt.Sprintf("%x", h.Sum(nil))
+	if len(data) == 0 {
 		return nil
 	}
-	data := make([]byte, size)
-	if err := read(data); err != nil {
-		return err
-	}
-	c.Remaining -= uint32(size)
-	c.Hash = fmt.Sprintf("%x", h.Sum(nil))
+
 	stream := []string{"stdout", "stderr"}[l.Stream]
 	l.Pending = &connection.JobLogChunk{Seq: l.Seq + 1, Stream: stream, Data: data}
-	l.Bytes += size
+	l.Bytes += len(data)
 	return nil
 }
 
@@ -197,7 +207,7 @@ func collectLogs(ctx context.Context, d *dockerClient, r *record, l *logState) e
 		return fmt.Errorf("Docker log read interrupted")
 	}
 	l.Stream = 1 - l.Stream
-	if l.Cursors[0].EOF && l.Cursors[1].EOF {
+	if l.Cursors[0].EOF && l.Cursors[1].EOF && l.Pending == nil {
 		l.Done = true
 	}
 	return nil

@@ -163,8 +163,8 @@ Requires application step 5 / migration 014, already merged into application dev
 The separate machine-authenticated `/api/v1/agent/jobs/logs` contract is
 [job-logs.md](https://github.com/Egorarefjev/kladit/blob/dev/docs/job-logs.md).
 One sequence combines stdout/stderr; raw bytes (including NUL and partial UTF-8)
-are sent as base64 in chunks of at most 8192 bytes. Docker timestamps/framing are
-removed. No workload text, raw response or assignment credential enters service logs.
+are sent as base64 in chunks of at most 8192 bytes. Short messages from the same
+stream are batched into one chunk. Docker timestamps/framing are removed. No workload text, raw response or assignment credential enters service logs.
 
 Each attempt retains one pending chunk and two Docker cursors in its private,
 atomic/fsynced journal. Collection and upload are separate bounded tasks: persist
