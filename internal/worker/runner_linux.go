@@ -136,7 +136,7 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	}
 	if !missing {
 		var spec jobSpec
-		if json.Unmarshal(r.Assignment.Spec, &spec) != nil || !matchesProfile(c, buildContainer(r, spec, filepath.Join(options.StatePath, "jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output"))) {
+		if json.Unmarshal(r.Assignment.Spec, &spec) != nil || len(spec.Argv) == 0 || !matchesProfile(c, buildContainer(r, spec, filepath.Join(options.StatePath, "jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output"))) {
 			return j.markUnknown("CONTAINER_PROFILE_MISMATCH")
 		}
 		if run.Phase == "preparing" && c.State.Status != "created" {

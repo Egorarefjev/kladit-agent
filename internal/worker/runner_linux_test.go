@@ -317,3 +317,39 @@ func TestCanonicalSpecMatchesBackend(t *testing.T) {
 		t.Fatal("backend hash differs")
 	}
 }
+
+func TestRunnerRequiresFreshStartPermission(t *testing.T) {
+	for _, mode := range []string{"missing", "expired", "cancelled", "owner-disabled", "unknown", "unacknowledged"} {
+		t.Run(mode, func(t *testing.T) {
+			d, socket, engine := fakeRunnerDocker(t)
+			j, options, a := runnerFixture(t, "registry.example/jobs@sha256:"+strings.Repeat("a", 64))
+			defer j.Close()
+			options.DockerSocket = socket
+			control := &a
+			enabled := true
+			switch mode {
+			case "missing":
+				control = nil
+			case "expired":
+				past := time.Now().Add(-time.Second)
+				a.StartPermitExpiresAt = &past
+			case "cancelled":
+				a.CancelRequested = true
+			case "owner-disabled":
+				enabled = false
+			case "unknown":
+				a.State = "unknown"
+			case "unacknowledged":
+				j.state.Current.Acked = false
+			}
+			if err := j.tick(context.Background(), d, options, control, enabled); err != nil {
+				t.Fatal(err)
+			}
+			engine.mu.Lock()
+			defer engine.mu.Unlock()
+			if engine.creates != 0 || engine.starts != 0 {
+				t.Fatal("started without permission")
+			}
+		})
+	}
+}
