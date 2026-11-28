@@ -11,7 +11,9 @@ application `c701b3e`, agent `30cb807`. Feature PRs target agent dev.
 | 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Merged in dev, bcca01a | Separate unit/policy, stable generation, private journal; metrics untouched | 4 |
 | 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Awaiting merge into dev | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5: backend log chunks, after confirmed merge |
 
-One PR at a time. Verify merges before continuing. The next application PR updates
+One PR at a time. Verify merges before continuing. After reviewing step 4, future scopes should be split into independently complete
+PRs before implementation where possible; no chain of unfinished dependent PRs.
+The next application PR updates
 its canonical progress table with merged agent steps; no companion PR just for that
 journal. A merge publishes no release and installs nothing on user machines.
 
@@ -87,7 +89,8 @@ are rejected rather than adding implicit writable volumes.
 The typed bounded spec is validated against local maxima and the backend spec hash.
 Canonical JSON preserves exact integers and JSON.stringify string escaping; a golden
 fixture from the actual JavaScript backend covers HTML characters and Unicode.
-Runtime/device env from a job is rejected. Container env explicitly overrides image
+Runtime/device env from a job is rejected. Effective controlled env must be unique
+and exactly match the requested profile, including disabled MIG administration. Container env explicitly overrides image
 NVIDIA visibility/capabilities and CUDA visibility; DeviceRequests selects the UUID.
 
 ## Container profile and state
@@ -133,8 +136,10 @@ Update/uninstall refuses a worker profile until drain/reconciliation is implemen
 
 One internal worker package: supervisor in worker_linux.go; assignment/ACK transitions
 in state_linux.go; persistence in journal_linux.go; spec/hash validation in spec_linux.go;
-Docker HTTP/profile and reconciliation in docker_linux.go/runner_linux.go; local NVIDIA
-preflight in gpu_linux.go. No service/repository abstractions or dependencies added.
+Docker HTTP in docker_linux.go, the shared profile builder/validator in
+container_profile_linux.go, reconciliation in runner_linux.go; local NVIDIA
+preflight in gpu_linux.go. No service/repository abstractions or dependencies added. Read-only preflight reuses
+the same Unix HTTP client with its own five-second deadline and bounded response.
 
 Tests inject lost create/start replies, restart journals between observations, reject
 foreign/missing/created-after-intent containers, preserve pending events and test the

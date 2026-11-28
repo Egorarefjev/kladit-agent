@@ -13,7 +13,7 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/policy"
 )
 
-// Run owns one synchronous supervisor under an exclusive lock. Execution is deliberately absent.
+// Run owns one synchronous supervisor under an exclusive lock. Execution readiness remains disabled until the lifecycle/results steps.
 func Run(ctx context.Context, options Options) error {
 	p, err := policy.LoadWorker(options.PolicyPath)
 	if err != nil {
@@ -46,7 +46,7 @@ func Run(ctx context.Context, options Options) error {
 		if err = preflight(ctx, p, options.StatePath, options.DockerSocket); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(log, "Worker prerequisites passed; container execution is disabled in this build")
+		_, err = fmt.Fprintln(log, "Worker prerequisites passed; execution readiness remains disabled")
 		return err
 	}
 	j, err := openJournal(options.StatePath)
@@ -56,7 +56,7 @@ func Run(ctx context.Context, options Options) error {
 	defer j.Close()
 	docker := newDocker(options.DockerSocket)
 	defer docker.close()
-	fmt.Fprintln(log, "Worker foundation active; container execution is disabled in this build")
+	fmt.Fprintln(log, "Worker runner active; execution readiness remains disabled")
 	failed := false
 	wasHealthy := true
 	for {

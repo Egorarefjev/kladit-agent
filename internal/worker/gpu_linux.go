@@ -84,7 +84,12 @@ func gpuPreflight(ctx context.Context, s jobSpec, p policy.Worker) error {
 		if len(row) != 2 {
 			return fmt.Errorf("GPU_STATE_UNKNOWN")
 		}
-		if strings.TrimSpace(row[0]) == *s.GPUUUID {
+		id := strings.TrimSpace(row[0])
+		pid, pidErr := strconv.ParseUint(strings.TrimSpace(row[1]), 10, 32)
+		if !gpuUUID.MatchString(id) || pidErr != nil || pid == 0 {
+			return fmt.Errorf("GPU_STATE_UNKNOWN")
+		}
+		if id == *s.GPUUUID {
 			return fmt.Errorf("GPU_BUSY")
 		}
 	}

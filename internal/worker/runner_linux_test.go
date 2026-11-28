@@ -75,6 +75,18 @@ type fakeEngine struct {
 	config          containerConfig
 }
 
+func containerFixture(config containerConfig) *containerInfo {
+	c := &containerInfo{ID: strings.Repeat("b", 64), Image: config.Image, HostConfig: config.HostConfig}
+	c.Config.Labels = config.Labels
+	c.Config.User = config.User
+	c.Config.WorkingDir = config.WorkingDir
+	c.Config.Entrypoint = config.Entrypoint
+	c.Config.Cmd = config.Cmd
+	c.Config.Env = config.Env
+	c.State.Status = "created"
+	return c
+}
+
 func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 	t.Helper()
 	f := &fakeEngine{}
@@ -90,6 +102,10 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 		case r.Method == "GET" && r.URL.Path == "/info":
 			json.NewEncoder(w).Encode(engineInfo())
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/images/"):
+			if f.fault == "missing-image" {
+				w.WriteHeader(404)
+				return
+			}
 			image := imageInfo{ID: "sha256:" + strings.Repeat("a", 64), OS: "linux", Architecture: runtime.GOARCH}
 			if f.fault == "image-profile" {
 				image.Config.Volumes = map[string]json.RawMessage{"/unexpected": json.RawMessage(`{}`)}
@@ -101,6 +117,8 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 				return
 			}
 			json.NewEncoder(w).Encode(f.container)
+		case r.Method == "POST" && r.URL.Path == "/images/create" && f.fault == "missing-image":
+			w.WriteHeader(404)
 		case r.Method == "POST" && r.URL.Path == "/containers/create":
 			f.creates++
 			if f.container != nil {
@@ -110,15 +128,7 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 			if json.NewDecoder(r.Body).Decode(&f.config) != nil {
 				t.Error("invalid config")
 			}
-			c := &containerInfo{ID: strings.Repeat("b", 64), Image: f.config.Image}
-			c.Config.Labels = f.config.Labels
-			c.Config.User = f.config.User
-			c.Config.WorkingDir = f.config.WorkingDir
-			c.Config.Entrypoint = f.config.Entrypoint
-			c.Config.Cmd = f.config.Cmd
-			c.Config.Env = f.config.Env
-			c.HostConfig = f.config.HostConfig
-			c.State.Status = "created"
+			c := containerFixture(f.config)
 			f.container = c
 			if f.fault == "create-response" {
 				w.WriteHeader(500)
@@ -147,7 +157,7 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 }
 
 func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
-	for _, fault := range []string{"image-profile", "none", "create-response", "start-response", "before-start", "missing-after-intent", "foreign-container"} {
+	for _, fault := range []string{"missing-image", "image-profile", "none", "create-response", "start-response", "before-start", "missing-after-intent", "foreign-container"} {
 		t.Run(fault, func(t *testing.T) {
 			d, socket, f := fakeRunnerDocker(t)
 			j, options, a := runnerFixture(t, "registry.example/jobs@sha256:"+strings.Repeat("a", 64))
@@ -160,16 +170,8 @@ func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
 				r.Runtime.ContainerID = strings.Repeat("b", 64)
 				r.Runtime.TimeoutSeconds = 30
 				r.Runtime.Phase = "start_intent"
-				c := &containerInfo{ID: r.Runtime.ContainerID, Image: r.Runtime.ImageID}
 				config := buildContainer(r, jobSpec{Argv: []string{"/bin/sh", "-c", "echo done > /output/done"}, CPUMillis: 100, MemoryBytes: 32 << 20, Network: "none"}, filepath.Join(options.StatePath, "jobs", a.JobID, a.AttemptID, "output"))
-				c.Config.Labels = containerLabels(r)
-				c.Config.User = config.User
-				c.Config.WorkingDir = config.WorkingDir
-				c.Config.Entrypoint = config.Entrypoint
-				c.Config.Cmd = config.Cmd
-				c.Config.Env = config.Env
-				c.HostConfig = config.HostConfig
-				c.State.Status = "created"
+				c := containerFixture(config)
 				f.container = c
 				if fault == "missing-after-intent" {
 					f.container = nil
@@ -197,10 +199,14 @@ func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
 			}
 			defer j.Close()
 			f.mu.Lock()
-			if fault == "image-profile" {
+			if fault == "image-profile" || fault == "missing-image" {
+				reason := "IMAGE_PROFILE_UNSUPPORTED"
+				if fault == "missing-image" {
+					reason = "IMAGE_UNAVAILABLE"
+				}
 				creates, starts := f.creates, f.starts
 				f.mu.Unlock()
-				if creates != 0 || starts != 0 || j.state.Current.Report.Event.State != "failed" || j.state.Current.Report.Event.Reason != "IMAGE_PROFILE_UNSUPPORTED" {
+				if creates != 0 || starts != 0 || j.state.Current.Report.Event.State != "failed" || j.state.Current.Report.Event.Reason != reason {
 					t.Fatal("unsupported image did not fail durably")
 				}
 				return
@@ -363,5 +369,56 @@ func TestRunnerRequiresFreshStartPermission(t *testing.T) {
 				t.Fatal("started without permission")
 			}
 		})
+	}
+}
+
+func TestEffectiveContainerProfileRejectsOverrides(t *testing.T) {
+	id := "GPU-fixture"
+	r := &record{Assignment: assignmentFixture("12345678-1234-4234-8234-123456789abc"), Runtime: &execution{ImageID: "sha256:" + strings.Repeat("a", 64)}}
+	spec := jobSpec{Argv: []string{"/bin/true"}, CPUMillis: 100, MemoryBytes: 32 << 20, Network: "none", GPUUUID: &id}
+	for _, test := range []struct {
+		name   string
+		mutate func(*containerInfo)
+	}{
+		{"duplicate-gpu-env", func(c *containerInfo) { c.Config.Env = append(c.Config.Env, "NVIDIA_VISIBLE_DEVICES=all") }},
+		{"duplicate-mig-env", func(c *containerInfo) { c.Config.Env = append(c.Config.Env, "NVIDIA_MIG_CONFIG_DEVICES=all") }},
+		{"extra-capability", func(c *containerInfo) { c.HostConfig.CapAdd = []string{"SYS_ADMIN"} }},
+		{"device-rules", func(c *containerInfo) { c.HostConfig.DeviceCgroupRules = []string{"c *:* rwm"} }},
+		{"all-gpus", func(c *containerInfo) { c.HostConfig.DeviceRequests[0].Count = -1 }},
+		{"driver-capabilities", func(c *containerInfo) { c.HostConfig.DeviceRequests[0].Capabilities = [][]string{{"gpu", "graphics"}} }},
+		{"blocking-logs", func(c *containerInfo) { c.HostConfig.LogConfig.Config["mode"] = "blocking" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			want := buildContainer(r, spec, "/private/output")
+			// Separate allocations so a mutated Docker response cannot mutate the expectation.
+			c := containerFixture(buildContainer(r, spec, "/private/output"))
+			if !matchesProfile(c, want) {
+				t.Fatal("valid profile rejected")
+			}
+			test.mutate(c)
+			if matchesProfile(c, want) {
+				t.Fatal("unsafe effective profile accepted")
+			}
+		})
+	}
+}
+
+func TestPendingTerminalReportDoesNotReconcileDocker(t *testing.T) {
+	d, socket, engine := fakeRunnerDocker(t)
+	j, options, a := runnerFixture(t, "registry.example/jobs@sha256:"+strings.Repeat("a", 64))
+	defer j.Close()
+	options.DockerSocket = socket
+	if err := j.emit("failed", "PREPARATION_FAILED", nil); err != nil {
+		t.Fatal(err)
+	}
+	report := j.state.Current.Report
+	engine.mu.Lock()
+	engine.container = &containerInfo{ID: strings.Repeat("f", 64), Image: "foreign"}
+	engine.mu.Unlock()
+	if err := j.tick(context.Background(), d, options, &a, true); err != nil {
+		t.Fatal(err)
+	}
+	if j.state.Current.Report != report || j.state.Current.Runtime.Phase != "preparing" {
+		t.Fatal("terminal observation was changed")
 	}
 }

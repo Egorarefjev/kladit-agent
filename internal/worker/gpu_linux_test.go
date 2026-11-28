@@ -39,6 +39,8 @@ esac
 		{"display", "GPU-fixture, 4096, 8, 0, Enabled, Disabled, Default", "", false},
 		{"unknown", "GPU-fixture, N/A, 8, 0, Disabled, Disabled, Default", "", false},
 		{"process-state-unknown", "GPU-fixture, 4096, 8, 0, Disabled, Disabled, Default", "malformed", false},
+		{"unknown-process-device", "GPU-fixture, 4096, 8, 0, Disabled, Disabled, Default", "N/A, 123", false},
+		{"unknown-process-id", "GPU-fixture, 4096, 8, 0, Disabled, Disabled, Default", "GPU-other, N/A", false},
 		{"missing-device", "GPU-other, 4096, 8, 0, Disabled, Disabled, Default", "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

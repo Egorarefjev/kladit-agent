@@ -9,9 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
-	"sort"
-	"strconv"
 	"time"
 
 	"github.com/Egorarefjev/kladit-agent/internal/connection"
@@ -47,46 +44,6 @@ func ownsContainer(r *record, c *containerInfo) bool {
 	}
 	return true
 }
-func buildContainer(r *record, s jobSpec, output string) containerConfig {
-	config := containerConfig{Image: r.Runtime.ImageID, Entrypoint: []string{s.Argv[0]}, Cmd: append([]string{}, s.Argv[1:]...), User: strconv.Itoa(os.Geteuid()) + ":" + strconv.Itoa(os.Getegid()), WorkingDir: "/output", Labels: containerLabels(r)}
-	keys := make([]string, 0, len(s.Env))
-	for k := range s.Env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		config.Env = append(config.Env, k+"="+s.Env[k])
-	}
-	visible := "void"
-	cuda := ""
-	if s.GPUUUID != nil {
-		visible = *s.GPUUUID
-		cuda = "0"
-	}
-	config.Env = append(config.Env, "NVIDIA_VISIBLE_DEVICES="+visible, "NVIDIA_DRIVER_CAPABILITIES=compute,utility", "CUDA_VISIBLE_DEVICES="+cuda)
-	config.Healthcheck.Test = []string{"NONE"}
-	h := &config.HostConfig
-	h.RestartPolicy.Name = "no"
-	h.NetworkMode = s.Network
-	h.IpcMode = "private"
-	h.ReadonlyRootfs = true
-	h.CapDrop = []string{"ALL"}
-	h.SecurityOpt = []string{"no-new-privileges:true"}
-	h.CPUPeriod = 100000
-	h.CPUQuota = int64(s.CPUMillis) * 100
-	h.Memory = int64(s.MemoryBytes)
-	h.MemorySwap = h.Memory
-	h.PidsLimit = 128
-	h.ShmSize = 16 << 20
-	h.Tmpfs = map[string]string{"/tmp": "rw,noexec,nosuid,nodev,size=67108864,mode=1777"}
-	h.Mounts = []mount{{Type: "bind", Source: output, Target: "/output", BindOptions: map[string]string{"Propagation": "rprivate"}}}
-	if s.GPUUUID != nil {
-		h.DeviceRequests = []deviceRequest{{Driver: "nvidia", DeviceIDs: []string{*s.GPUUUID}, Capabilities: [][]string{{"gpu"}}}}
-	}
-	h.LogConfig.Type = "local"
-	h.LogConfig.Config = map[string]string{"max-size": "10m", "max-file": "1", "compress": "false", "mode": "non-blocking", "max-buffer-size": "1m"}
-	return config
-}
 
 func (j *journal) emit(state, reason string, c *containerInfo) error {
 	r := j.state.Current
@@ -111,9 +68,11 @@ func (j *journal) emit(state, reason string, c *containerInfo) error {
 // start_intent is a one-way barrier: neither created nor absent containers cross it twice.
 func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, control *connection.JobAssignment, enabled bool) error {
 	r := j.state.Current
-	if r == nil || r.Runtime == nil {
+	if r == nil || r.Runtime == nil || terminalState(r.Report.Event.State) {
 		return nil
 	}
+	relative := filepath.Join("jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output")
+	output := filepath.Join(options.StatePath, relative)
 	run := r.Runtime
 	if run.Phase == "unknown" {
 		if r.Acked && r.Report.Event.State != "unknown" {
@@ -136,7 +95,7 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	}
 	if !missing {
 		var spec jobSpec
-		if json.Unmarshal(r.Assignment.Spec, &spec) != nil || len(spec.Argv) == 0 || !matchesProfile(c, buildContainer(r, spec, filepath.Join(options.StatePath, "jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output"))) {
+		if json.Unmarshal(r.Assignment.Spec, &spec) != nil || len(spec.Argv) == 0 || !matchesProfile(c, buildContainer(r, spec, output)) {
 			return j.markUnknown("CONTAINER_PROFILE_MISMATCH")
 		}
 		if run.Phase == "preparing" && c.State.Status != "created" {
@@ -196,17 +155,15 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	if missing {
 		image, err := d.image(ctx, spec.Image)
 		if err != nil {
-			if errors.Is(err, errImageProfile) {
-				return j.emit("failed", errImageProfile.Error(), nil)
+			if errors.Is(err, errImageProfile) || errors.Is(err, errImageUnavailable) {
+				return j.emit("failed", err.Error(), nil)
 			}
 			return nil
 		}
 		run.ImageID = image.ID
-		relative := filepath.Join("jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output")
 		if err = j.root.MkdirAll(relative, 0700); err != nil {
 			return j.emit("failed", "OUTPUT_UNAVAILABLE", nil)
 		}
-		output := filepath.Join(options.StatePath, relative)
 		if err = privateOutput(j, relative); err != nil {
 			return j.emit("failed", "OUTPUT_UNAVAILABLE", nil)
 		}
@@ -238,7 +195,7 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 			return j.markUnknown("CONTAINER_IDENTITY_MISMATCH")
 		}
 	}
-	if !matchesProfile(c, buildContainer(r, spec, filepath.Join(options.StatePath, "jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output"))) {
+	if !matchesProfile(c, buildContainer(r, spec, output)) {
 		return j.markUnknown("CONTAINER_PROFILE_MISMATCH")
 	}
 	if c.State.Status != "created" {
@@ -298,41 +255,4 @@ func jobPreflight(ctx context.Context, options Options, p policy.Worker, s jobSp
 		return fmt.Errorf("MEMORY_UNAVAILABLE")
 	}
 	return gpuPreflight(ctx, s, p)
-}
-
-func matchesProfile(c *containerInfo, want containerConfig) bool {
-	h, w := c.HostConfig, want.HostConfig
-	if h.Privileged || h.AutoRemove || h.RestartPolicy.Name != "no" || !h.ReadonlyRootfs || h.PidMode != "" || h.IpcMode != "private" || h.NetworkMode != w.NetworkMode || h.CPUPeriod != w.CPUPeriod || h.CPUQuota != w.CPUQuota || h.Memory != w.Memory || h.MemorySwap != w.MemorySwap || h.PidsLimit != w.PidsLimit || h.ShmSize != w.ShmSize {
-		return false
-	}
-	if len(h.Devices) != 0 || len(h.Binds) != 0 || len(h.PortBindings) != 0 || h.PublishAllPorts || len(h.VolumesFrom) != 0 {
-		return false
-	}
-	if len(h.Tmpfs) != 1 || h.Tmpfs["/tmp"] != w.Tmpfs["/tmp"] || h.LogConfig.Type != "local" || h.LogConfig.Config["max-size"] != "10m" || h.LogConfig.Config["max-file"] != "1" || h.LogConfig.Config["compress"] != "false" {
-		return false
-	}
-	if !slices.Contains(h.CapDrop, "ALL") || (!slices.Contains(h.SecurityOpt, "no-new-privileges") && !slices.Contains(h.SecurityOpt, "no-new-privileges:true")) {
-		return false
-	}
-	if len(h.Mounts) != 1 || h.Mounts[0].Type != "bind" || h.Mounts[0].Source != w.Mounts[0].Source || h.Mounts[0].Target != "/output" || h.Mounts[0].ReadOnly {
-		return false
-	}
-	if len(h.DeviceRequests) != len(w.DeviceRequests) {
-		return false
-	}
-	if len(w.DeviceRequests) > 0 {
-		d := h.DeviceRequests[0]
-		if d.Driver != "nvidia" || !slices.Equal(d.DeviceIDs, w.DeviceRequests[0].DeviceIDs) {
-			return false
-		}
-	}
-	if c.Config.User != want.User || c.Config.WorkingDir != "/output" || !slices.Equal(c.Config.Entrypoint, want.Entrypoint) || !slices.Equal(c.Config.Cmd, want.Cmd) {
-		return false
-	}
-	for _, env := range want.Env {
-		if !slices.Contains(c.Config.Env, env) {
-			return false
-		}
-	}
-	return true
 }

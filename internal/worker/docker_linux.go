@@ -15,6 +15,7 @@ import (
 )
 
 var errImageProfile = errors.New("IMAGE_PROFILE_UNSUPPORTED")
+var errImageUnavailable = errors.New("IMAGE_UNAVAILABLE")
 
 type dockerClient struct{ http *http.Client }
 type dockerError struct{ status int }
@@ -111,6 +112,10 @@ func (d *dockerClient) image(ctx context.Context, digest string) (imageInfo, err
 		}
 	}
 	if err != nil {
+		var rejected *dockerError
+		if errors.As(err, &rejected) && rejected.status >= 400 && rejected.status < 500 && rejected.status != 408 && rejected.status != 429 {
+			return info, errImageUnavailable
+		}
 		return info, err
 	}
 	if len(info.Config.Volumes) != 0 {
@@ -130,6 +135,7 @@ type mount struct {
 	BindOptions map[string]string
 }
 type deviceRequest struct {
+	Count        int
 	Driver       string
 	DeviceIDs    []string
 	Capabilities [][]string
@@ -147,30 +153,32 @@ type containerConfig struct {
 	HostConfig  hostConfig
 }
 type hostConfig struct {
-	Binds           []string
-	Devices         []json.RawMessage
-	PortBindings    map[string]json.RawMessage
-	PublishAllPorts bool
-	VolumesFrom     []string
-	RestartPolicy   struct{ Name string }
-	AutoRemove      bool
-	Privileged      bool
-	NetworkMode     string
-	PidMode         string
-	IpcMode         string
-	ReadonlyRootfs  bool
-	CapDrop         []string
-	SecurityOpt     []string
-	CPUPeriod       int64 `json:"CpuPeriod"`
-	CPUQuota        int64 `json:"CpuQuota"`
-	Memory          int64
-	MemorySwap      int64
-	PidsLimit       int64
-	ShmSize         int64
-	Tmpfs           map[string]string
-	Mounts          []mount
-	DeviceRequests  []deviceRequest
-	LogConfig       struct {
+	Binds             []string
+	Devices           []json.RawMessage
+	PortBindings      map[string]json.RawMessage
+	PublishAllPorts   bool
+	VolumesFrom       []string
+	RestartPolicy     struct{ Name string }
+	AutoRemove        bool
+	Privileged        bool
+	NetworkMode       string
+	PidMode           string
+	IpcMode           string
+	ReadonlyRootfs    bool
+	CapAdd            []string
+	DeviceCgroupRules []string
+	CapDrop           []string
+	SecurityOpt       []string
+	CPUPeriod         int64 `json:"CpuPeriod"`
+	CPUQuota          int64 `json:"CpuQuota"`
+	Memory            int64
+	MemorySwap        int64
+	PidsLimit         int64
+	ShmSize           int64
+	Tmpfs             map[string]string
+	Mounts            []mount
+	DeviceRequests    []deviceRequest
+	LogConfig         struct {
 		Type   string
 		Config map[string]string
 	}

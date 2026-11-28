@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,16 +23,15 @@ func preflight(ctx context.Context, p policy.Worker, statePath, socket string) e
 	if err != nil || info.Mode()&os.ModeSocket == 0 {
 		return fmt.Errorf("DOCKER_UNAVAILABLE")
 	}
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-	}}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	docker := newDocker(socket)
+	defer docker.close()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/info", nil)
 	if err != nil {
 		return fmt.Errorf("DOCKER_UNAVAILABLE")
 	}
-	response, err := client.Do(req)
+	response, err := docker.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("DOCKER_UNAVAILABLE")
 	}
