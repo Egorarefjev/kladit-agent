@@ -108,6 +108,12 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 			}
 			c := &containerInfo{ID: strings.Repeat("b", 64), Image: f.config.Image}
 			c.Config.Labels = f.config.Labels
+			c.Config.User = f.config.User
+			c.Config.WorkingDir = f.config.WorkingDir
+			c.Config.Entrypoint = f.config.Entrypoint
+			c.Config.Cmd = f.config.Cmd
+			c.Config.Env = f.config.Env
+			c.HostConfig = f.config.HostConfig
 			c.State.Status = "created"
 			f.container = c
 			if f.fault == "create-response" {
@@ -151,7 +157,14 @@ func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
 				r.Runtime.TimeoutSeconds = 30
 				r.Runtime.Phase = "start_intent"
 				c := &containerInfo{ID: r.Runtime.ContainerID, Image: r.Runtime.ImageID}
+				config := buildContainer(r, jobSpec{Argv: []string{"/bin/sh", "-c", "echo done > /output/done"}, CPUMillis: 100, MemoryBytes: 32 << 20, Network: "none"}, filepath.Join(options.StatePath, "jobs", a.JobID, a.AttemptID, "output"))
 				c.Config.Labels = containerLabels(r)
+				c.Config.User = config.User
+				c.Config.WorkingDir = config.WorkingDir
+				c.Config.Entrypoint = config.Entrypoint
+				c.Config.Cmd = config.Cmd
+				c.Config.Env = config.Env
+				c.HostConfig = config.HostConfig
 				c.State.Status = "created"
 				f.container = c
 				if fault == "missing-after-intent" {

@@ -2,11 +2,14 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -131,6 +134,15 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	} else if err != nil {
 		return nil
 	}
+	if !missing {
+		var spec jobSpec
+		if json.Unmarshal(r.Assignment.Spec, &spec) != nil || !matchesProfile(c, buildContainer(r, spec, filepath.Join(options.StatePath, "jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output"))) {
+			return j.markUnknown("CONTAINER_PROFILE_MISMATCH")
+		}
+		if run.Phase == "preparing" && c.State.Status != "created" {
+			return j.markUnknown("UNEXPECTED_CONTAINER_START")
+		}
+	}
 	if run.Phase != "preparing" {
 		if missing || c.State.Status == "created" {
 			return j.markUnknown("START_OUTCOME_UNKNOWN")
@@ -184,6 +196,9 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 	if missing {
 		image, err := d.image(ctx, spec.Image)
 		if err != nil {
+			if errors.Is(err, errImageProfile) {
+				return j.emit("failed", errImageProfile.Error(), nil)
+			}
 			return nil
 		}
 		run.ImageID = image.ID
@@ -203,6 +218,9 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 			ID string `json:"Id"`
 		}
 		if err = d.request(ctx, http.MethodPost, "/containers/create?name="+containerName(r), config, &created); err != nil {
+			if rejected, ok := err.(*dockerError); ok && rejected.status == 400 {
+				return j.emit("failed", "CONTAINER_PROFILE_REJECTED", nil)
+			}
 			return nil
 		}
 		if !containerID.MatchString(created.ID) {
@@ -219,6 +237,9 @@ func (j *journal) tick(ctx context.Context, d *dockerClient, options Options, co
 		if !ownsContainer(r, c) {
 			return j.markUnknown("CONTAINER_IDENTITY_MISMATCH")
 		}
+	}
+	if !matchesProfile(c, buildContainer(r, spec, filepath.Join(options.StatePath, "jobs", r.Assignment.JobID, r.Assignment.AttemptID, "output"))) {
+		return j.markUnknown("CONTAINER_PROFILE_MISMATCH")
 	}
 	if c.State.Status != "created" {
 		return j.markUnknown("UNEXPECTED_CONTAINER_START")
@@ -277,4 +298,41 @@ func jobPreflight(ctx context.Context, options Options, p policy.Worker, s jobSp
 		return fmt.Errorf("MEMORY_UNAVAILABLE")
 	}
 	return gpuPreflight(ctx, s, p)
+}
+
+func matchesProfile(c *containerInfo, want containerConfig) bool {
+	h, w := c.HostConfig, want.HostConfig
+	if h.Privileged || h.AutoRemove || h.RestartPolicy.Name != "no" || !h.ReadonlyRootfs || h.PidMode != "" || h.IpcMode != "private" || h.NetworkMode != w.NetworkMode || h.CPUPeriod != w.CPUPeriod || h.CPUQuota != w.CPUQuota || h.Memory != w.Memory || h.MemorySwap != w.MemorySwap || h.PidsLimit != w.PidsLimit || h.ShmSize != w.ShmSize {
+		return false
+	}
+	if len(h.Devices) != 0 || len(h.Binds) != 0 || len(h.PortBindings) != 0 || h.PublishAllPorts || len(h.VolumesFrom) != 0 {
+		return false
+	}
+	if len(h.Tmpfs) != 1 || h.Tmpfs["/tmp"] != w.Tmpfs["/tmp"] || h.LogConfig.Type != "local" || h.LogConfig.Config["max-size"] != "10m" || h.LogConfig.Config["max-file"] != "1" || h.LogConfig.Config["compress"] != "false" {
+		return false
+	}
+	if !slices.Contains(h.CapDrop, "ALL") || (!slices.Contains(h.SecurityOpt, "no-new-privileges") && !slices.Contains(h.SecurityOpt, "no-new-privileges:true")) {
+		return false
+	}
+	if len(h.Mounts) != 1 || h.Mounts[0].Type != "bind" || h.Mounts[0].Source != w.Mounts[0].Source || h.Mounts[0].Target != "/output" || h.Mounts[0].ReadOnly {
+		return false
+	}
+	if len(h.DeviceRequests) != len(w.DeviceRequests) {
+		return false
+	}
+	if len(w.DeviceRequests) > 0 {
+		d := h.DeviceRequests[0]
+		if d.Driver != "nvidia" || !slices.Equal(d.DeviceIDs, w.DeviceRequests[0].DeviceIDs) {
+			return false
+		}
+	}
+	if c.Config.User != want.User || c.Config.WorkingDir != "/output" || !slices.Equal(c.Config.Entrypoint, want.Entrypoint) || !slices.Equal(c.Config.Cmd, want.Cmd) {
+		return false
+	}
+	for _, env := range want.Env {
+		if !slices.Contains(c.Config.Env, env) {
+			return false
+		}
+	}
+	return true
 }

@@ -50,7 +50,7 @@ func parseSpec(a connection.JobAssignment, p policy.Worker) (jobSpec, error) {
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(canonical)) != a.SpecHash {
 		return s, fmt.Errorf("SPEC_HASH_MISMATCH")
 	}
-	if !connection.ValidJobIdentity(s.ServerID) || !imageDigest.MatchString(s.Image) || len(s.Image) > 512 || len(s.Argv) == 0 || len(s.Argv) > 128 || s.Argv[0] == "" || s.CPUMillis == 0 || s.CPUMillis > p.Limits.CPUMillis || s.CPUMillis > 9007199254740991 || s.MemoryBytes == 0 || s.MemoryBytes > p.Limits.MemoryBytes || s.MemoryBytes > 9007199254740991 || s.TimeoutSeconds == 0 || s.TimeoutSeconds > p.Limits.TimeoutSeconds || s.TimeoutSeconds > 86400 || (s.Network != "none" && s.Network != "bridge") {
+	if !connection.ValidJobIdentity(s.ServerID) || !imageDigest.MatchString(s.Image) || len(s.Image) > 512 || len(s.Argv) == 0 || len(s.Argv) > 128 || s.Argv[0] == "" || s.CPUMillis < 10 || s.CPUMillis > p.Limits.CPUMillis || s.CPUMillis > 9007199254740991 || s.MemoryBytes < 6<<20 || s.MemoryBytes > p.Limits.MemoryBytes || s.MemoryBytes > 9007199254740991 || s.TimeoutSeconds == 0 || s.TimeoutSeconds > p.Limits.TimeoutSeconds || s.TimeoutSeconds > 86400 || (s.Network != "none" && s.Network != "bridge") {
 		return s, fmt.Errorf("JOB_LIMITS_DENIED")
 	}
 	if s.ResultDestination.ServerID != s.ServerID || s.ResultDestination.StorageID != "default" || s.DeleteSource || s.InputID != nil || len(s.SecretRefs) != 0 {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"runtime"
 	"time"
 )
+
+var errImageProfile = errors.New("IMAGE_PROFILE_UNSUPPORTED")
 
 type dockerClient struct{ http *http.Client }
 type dockerError struct{ status int }
@@ -66,8 +69,16 @@ type imageInfo struct {
 type containerInfo struct {
 	ID     string `json:"Id"`
 	Image  string
-	Config struct{ Labels map[string]string }
-	State  struct {
+	Config struct {
+		Labels     map[string]string
+		User       string
+		WorkingDir string
+		Entrypoint []string
+		Cmd        []string
+		Env        []string
+	}
+	HostConfig hostConfig
+	State      struct {
 		Error      string
 		Status     string
 		Running    bool
@@ -103,10 +114,10 @@ func (d *dockerClient) image(ctx context.Context, digest string) (imageInfo, err
 		return info, err
 	}
 	if len(info.Config.Volumes) != 0 {
-		return info, fmt.Errorf("IMAGE_VOLUMES_UNSUPPORTED")
+		return info, errImageProfile
 	}
 	if !imageID.MatchString(info.ID) || info.OS != "linux" || info.Architecture != runtime.GOARCH {
-		return info, fmt.Errorf("IMAGE_PLATFORM_UNSUPPORTED")
+		return info, errImageProfile
 	}
 	return info, nil
 }
@@ -136,25 +147,30 @@ type containerConfig struct {
 	HostConfig  hostConfig
 }
 type hostConfig struct {
-	RestartPolicy  struct{ Name string }
-	AutoRemove     bool
-	Privileged     bool
-	NetworkMode    string
-	PidMode        string
-	IpcMode        string
-	ReadonlyRootfs bool
-	CapDrop        []string
-	SecurityOpt    []string
-	CPUPeriod      int64 `json:"CpuPeriod"`
-	CPUQuota       int64 `json:"CpuQuota"`
-	Memory         int64
-	MemorySwap     int64
-	PidsLimit      int64
-	ShmSize        int64
-	Tmpfs          map[string]string
-	Mounts         []mount
-	DeviceRequests []deviceRequest
-	LogConfig      struct {
+	Binds           []string
+	Devices         []json.RawMessage
+	PortBindings    map[string]json.RawMessage
+	PublishAllPorts bool
+	VolumesFrom     []string
+	RestartPolicy   struct{ Name string }
+	AutoRemove      bool
+	Privileged      bool
+	NetworkMode     string
+	PidMode         string
+	IpcMode         string
+	ReadonlyRootfs  bool
+	CapDrop         []string
+	SecurityOpt     []string
+	CPUPeriod       int64 `json:"CpuPeriod"`
+	CPUQuota        int64 `json:"CpuQuota"`
+	Memory          int64
+	MemorySwap      int64
+	PidsLimit       int64
+	ShmSize         int64
+	Tmpfs           map[string]string
+	Mounts          []mount
+	DeviceRequests  []deviceRequest
+	LogConfig       struct {
 		Type   string
 		Config map[string]string
 	}

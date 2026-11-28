@@ -67,6 +67,8 @@ At most 16 unique GPU UUIDs are allowed. Idle GPU memory allowance is local and 
 at 1 GiB; default zero. Before create and again immediately before start, require
 rootful Linux Docker, cgroup v2 and CPU quota/memory/swap/PID support, host free RAM
 at least the job memory limit, free disk and a matching image architecture.
+The Docker profile requires CPU at least 10 millis and memory at least 6 MiB;
+smaller unsupported limits fail explicitly.
 
 GPU requests must select one explicitly allowlisted UUID. Fresh bounded two-second
 `nvidia-smi` CSV queries check total/used VRAM, zero utilization, disabled display/MIG,
@@ -92,7 +94,8 @@ NVIDIA visibility/capabilities and CUDA visibility; DeviceRequests selects the U
 
 Name `kladit-<attempt UUID>` and labels bind job, attempt, spec hash and generation.
 Pull/inspect image before create, pin the resolved image ID, and verify container ID,
-image and labels before adopting an existing container. No automatic container removal.
+image, labels and the effective container resource/security profile before adopting
+an existing container. No automatic container removal.
 Create can be retried only through deterministic-name lookup, not a blind new container.
 
 Fixed profile: restart=no, no auto-remove/privileged/host PID/IPC/network or ports,
