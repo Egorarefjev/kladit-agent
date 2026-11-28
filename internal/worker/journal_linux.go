@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/Egorarefjev/kladit-agent/internal/connection"
 )
 
 type journal struct {
