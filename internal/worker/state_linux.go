@@ -13,6 +13,7 @@ import (
 )
 
 type record struct {
+	Logs       *logState                `json:"logs,omitempty"`
 	Assignment connection.JobAssignment `json:"assignment"`
 	Report     connection.JobReport     `json:"report"`
 	Acked      bool                     `json:"acked,omitempty"`
@@ -98,7 +99,7 @@ func terminalState(state string) bool {
 func validRecord(r *record, generation string) bool {
 	a := r.Assignment
 	p := r.Report
-	if !connection.ValidJobAssignment(&a, generation) || p.AttemptID != a.AttemptID || p.SpecHash != a.SpecHash || p.AssignmentToken != a.AssignmentToken || p.Event.Seq == 0 || p.Event.Seq > 9007199254740991 {
+	if !validLogs(r.Logs) || !connection.ValidJobAssignment(&a, generation) || p.AttemptID != a.AttemptID || p.SpecHash != a.SpecHash || p.AssignmentToken != a.AssignmentToken || p.Event.Seq == 0 || p.Event.Seq > 9007199254740991 {
 		return false
 	}
 	if r.Runtime == nil {

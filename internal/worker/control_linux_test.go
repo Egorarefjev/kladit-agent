@@ -202,11 +202,17 @@ func TestNaturalExitWinsLateCancelAndMissingContainerStaysUnknown(t *testing.T) 
 }
 
 func TestSupervisorStopsDuringBlockedSyncAndOnRevocation(t *testing.T) {
-	for _, mode := range []string{"blocked-sync", "revoked", "invalid-policy"} {
+	for _, mode := range []string{"blocked-sync", "revoked", "invalid-policy", "blocked-logs", "logs-revoked"} {
 		t.Run(mode, func(t *testing.T) {
 			j, options, _, _, f := activeFixture(t)
-			if mode == "blocked-sync" {
+			if mode == "blocked-sync" || mode == "blocked-logs" {
 				seedStart(t, j, f, time.Now().Add(-28*time.Second))
+			}
+			if mode == "blocked-logs" || mode == "logs-revoked" {
+				j.state.Current.Logs = &logState{Pending: &connection.JobLogChunk{Seq: 1, Stream: "stdout", Data: []byte("pending")}, Bytes: 7}
+				if err := j.save(); err != nil {
+					t.Fatal(err)
+				}
 			}
 			generation := j.state.Generation
 			j.Close()
@@ -214,8 +220,12 @@ func TestSupervisorStopsDuringBlockedSyncAndOnRevocation(t *testing.T) {
 			release := make(chan struct{})
 			var once sync.Once
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if (mode == "blocked-logs" || mode == "logs-revoked") && r.URL.Path != "/api/v1/agent/jobs/logs" {
+					json.NewEncoder(w).Encode(connection.JobsResponse{Version: 1, WorkerGeneration: generation, Enabled: true})
+					return
+				}
 				once.Do(func() { close(entered) })
-				if mode == "revoked" {
+				if mode == "revoked" || mode == "logs-revoked" {
 					w.WriteHeader(401)
 					return
 				}
@@ -262,7 +272,7 @@ func TestSupervisorStopsDuringBlockedSyncAndOnRevocation(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer saved.Close()
-			want := map[string]string{"blocked-sync": "TIMEOUT", "revoked": "AGENT_REVOKED", "invalid-policy": "EXECUTION_DISABLED"}[mode]
+			want := map[string]string{"blocked-sync": "TIMEOUT", "revoked": "AGENT_REVOKED", "invalid-policy": "EXECUTION_DISABLED", "blocked-logs": "TIMEOUT", "logs-revoked": "AGENT_REVOKED"}[mode]
 			if saved.state.Current.Runtime.StopReason != want {
 				t.Fatal("stop intent was not durable")
 			}
