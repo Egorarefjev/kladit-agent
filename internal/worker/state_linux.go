@@ -36,6 +36,7 @@ func (j *journal) accept(response connection.JobsResponse) error {
 			if err := j.write(".done-"+r.Assignment.AttemptID+".json", r); err != nil {
 				return err
 			}
+			j.queueLogs(r.Assignment.AttemptID)
 			j.state.Current = nil
 		} else {
 			r.Acked = true

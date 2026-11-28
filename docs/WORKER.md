@@ -12,7 +12,7 @@ for this stage at the owner's request. Feature PRs target agent dev.
 | 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Merged in dev, 369479b | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5 |
 | 5 | [app #64](https://github.com/Egorarefjev/kladit/pull/64) | Merged in dev, c80508b | Bounded backend log chunks | 6a |
 | 6a | [agent #17](https://github.com/Egorarefjev/kladit-agent/pull/17) | Merged in dev, 8e90e70 | Local cancel/timeout independent of sync; persisted TERM/KILL and exit evidence; readiness remains false | 6b |
-| 6b | This PR | Awaiting merge into dev | Independent bounded durable stdout/stderr delivery; restart/retry and truncation; readiness remains false | 7: application result read/relay after confirmed merge |
+| 6b | [agent #18](https://github.com/Egorarefjev/kladit-agent/pull/18) | Awaiting merge into dev | Independent bounded durable stdout/stderr delivery; restart/retry and truncation; readiness remains false | 7: application result read/relay after confirmed merge |
 
 One PR at a time. Verify merges before continuing. After reviewing step 4, future scopes should be split into independently complete
 PRs before implementation where possible; no chain of unfinished dependent PRs.
@@ -171,7 +171,8 @@ atomic/fsynced journal. Collection and upload are separate bounded tasks: persis
 before upload, replay the identical chunk after a lost response or restart, and
 advance only after its exact ACK. Lifecycle events have independent sequences.
 Terminal ACK moves this spool into the existing bounded tombstone history; tails
-continue round-robin even when another attempt is current. This does not hold or
+continue round-robin even when another attempt is current. The in-memory queue
+rebuilds on restart and examines at most 16 old records per pass. This does not hold or
 release the compute slot. The existing 1024-attempt history limit also bounds spool
 storage (at most 8 MiB raw pending bytes, plus bounded specs/cursors/JSON overhead).
 

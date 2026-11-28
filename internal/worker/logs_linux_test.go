@@ -170,7 +170,7 @@ func TestLogsDurableReplayTerminalTailAndQuota(t *testing.T) {
 	if err := j.saveLogs(result); err != nil {
 		t.Fatal(err)
 	}
-	history, err := j.nextLogRecord("")
+	history, err := j.nextLogRecord()
 	if err != nil || history == nil || history.Assignment.AttemptID != id || history.Logs.Seq != 1 {
 		t.Fatal("terminal tail lost", err)
 	}
@@ -194,7 +194,7 @@ func TestLogsDurableReplayTerminalTailAndQuota(t *testing.T) {
 	if err := j.saveLogs(result); err != nil {
 		t.Fatal(err)
 	}
-	if next, err := j.nextLogRecord(""); err != nil || next != nil {
+	if next, err := j.nextLogRecord(); err != nil || next != nil {
 		t.Fatal("closed logs retried", err)
 	}
 }

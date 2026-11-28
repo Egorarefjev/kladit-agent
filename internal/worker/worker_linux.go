@@ -71,7 +71,6 @@ func Run(ctx context.Context, options Options) error {
 	var logPending <-chan logResult
 	var logCancel context.CancelFunc
 	nextLog := time.Time{}
-	lastLog := ""
 	logBackoff := time.Second
 	nextSync := time.Time{}
 	notifiedDenied, sentAllowed, failed := false, false, false
@@ -118,12 +117,11 @@ func Run(ctx context.Context, options Options) error {
 			}()
 		}
 		if fatal == nil && allowed && logPending == nil && !time.Now().Before(nextLog) {
-			record, logErr := j.nextLogRecord(lastLog)
+			record, logErr := j.nextLogRecord()
 			if logErr != nil {
 				return logErr
 			}
 			if record != nil {
-				lastLog = record.Assignment.AttemptID
 				result := make(chan logResult, 1)
 				logPending = result
 				budget := 2 * time.Second

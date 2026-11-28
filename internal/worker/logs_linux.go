@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -275,38 +275,42 @@ func (j *journal) saveLogs(result logResult) error {
 	return j.write(".done-"+result.attempt+".json", r)
 }
 
-// Round-robin over bounded tombstones allows delayed terminal tails without
-// holding the compute slot or overwriting them when a new assignment arrives.
-func (j *journal) nextLogRecord(after string) (*record, error) {
-	dir, err := j.root.Open(".")
-	if err != nil {
-		return nil, err
+// Queue membership is only an optimization; restart reconstructs it from durable
+// tombstones. Scan at most 16 old records per pass, never all 1024 in the supervisor.
+func (j *journal) queueLogs(id string) {
+	if !slices.Contains(j.logQueue, id) {
+		j.logQueue = append(j.logQueue, id)
 	}
-	entries, err := dir.ReadDir(1030)
-	dir.Close()
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	ids := []string{}
-	if r := j.state.Current; r != nil {
-		ids = append(ids, r.Assignment.AttemptID)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, ".done-") && strings.HasSuffix(name, ".json") {
-			id := strings.TrimSuffix(strings.TrimPrefix(name, ".done-"), ".json")
-			if !connection.ValidJobIdentity(id) {
-				return nil, fmt.Errorf("invalid worker log history")
-			}
-			if j.state.Current == nil || j.state.Current.Assignment.AttemptID != id {
-				ids = append(ids, id)
+}
+func (j *journal) nextLogRecord() (*record, error) {
+	if !j.logIndexed {
+		dir, err := j.root.Open(".")
+		if err != nil {
+			return nil, err
+		}
+		entries, err := dir.ReadDir(1030)
+		dir.Close()
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, ".done-") && strings.HasSuffix(name, ".json") {
+				id := strings.TrimSuffix(strings.TrimPrefix(name, ".done-"), ".json")
+				if !connection.ValidJobIdentity(id) {
+					return nil, fmt.Errorf("invalid worker log history")
+				}
+				j.queueLogs(id)
 			}
 		}
+		j.logIndexed = true
 	}
-	sort.Strings(ids)
-	first := sort.SearchStrings(ids, after)
-	for i := 0; i < len(ids); i++ {
-		id := ids[(first+i+1)%len(ids)]
+	if r := j.state.Current; r != nil {
+		j.queueLogs(r.Assignment.AttemptID)
+	}
+	for range min(len(j.logQueue), 16) {
+		id := j.logQueue[0]
+		j.logQueue = j.logQueue[1:]
 		r, err := j.logRecord(id)
 		if err != nil {
 			return nil, err
@@ -314,6 +318,7 @@ func (j *journal) nextLogRecord(after string) (*record, error) {
 		if r.Runtime == nil || r.Runtime.ContainerID == "" || r.Runtime.Deadline == "" || (r.Logs != nil && (r.Logs.Done || r.Logs.Blocked)) {
 			continue
 		}
+		j.queueLogs(id)
 		copy := *r
 		runtime := *r.Runtime
 		copy.Runtime = &runtime
