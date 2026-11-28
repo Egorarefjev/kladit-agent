@@ -19,10 +19,13 @@ import (
 	"github.com/Egorarefjev/kladit-agent/internal/policy"
 )
 
-func runnerAssignment(t *testing.T, generation, image string) connection.JobAssignment {
+func runnerAssignment(t *testing.T, generation, image string, argv ...string) connection.JobAssignment {
 	t.Helper()
 	a := assignmentFixture(generation)
 	s := jobSpec{ServerID: a.JobID, Image: image, Argv: []string{"/bin/sh", "-c", "echo done > /output/done"}, CPUMillis: 100, MemoryBytes: 32 << 20, TimeoutSeconds: 30, Env: map[string]string{}, SecretRefs: []string{}, Network: "none"}
+	if len(argv) > 0 {
+		s.Argv = argv
+	}
 	s.ResultDestination.ServerID = s.ServerID
 	s.ResultDestination.StorageID = "default"
 	data, err := json.Marshal(s)
@@ -37,7 +40,7 @@ func runnerAssignment(t *testing.T, generation, image string) connection.JobAssi
 	a.SpecHash = fmt.Sprintf("%x", sha256.Sum256(canonical))
 	return a
 }
-func runnerFixture(t *testing.T, image string) (*journal, Options, connection.JobAssignment) {
+func runnerFixture(t *testing.T, image string, argv ...string) (*journal, Options, connection.JobAssignment) {
 	t.Helper()
 	path := privateDir(t)
 	options := Options{StatePath: path, PolicyPath: filepath.Join(path, "policy.json")}
@@ -53,7 +56,7 @@ func runnerFixture(t *testing.T, image string) (*journal, Options, connection.Jo
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := runnerAssignment(t, j.state.Generation, image)
+	a := runnerAssignment(t, j.state.Generation, image, argv...)
 	if err = j.accept(connection.JobsResponse{Assignment: &a}); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +71,11 @@ func runnerFixture(t *testing.T, image string) (*journal, Options, connection.Jo
 }
 
 type fakeEngine struct {
+	signals         chan string
 	mu              sync.Mutex
 	container       *containerInfo
 	creates, starts int
+	terms, kills    int
 	fault           string
 	config          containerConfig
 }
@@ -89,7 +94,7 @@ func containerFixture(config containerConfig) *containerInfo {
 
 func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 	t.Helper()
-	f := &fakeEngine{}
+	f := &fakeEngine{signals: make(chan string, 2)}
 	socket := filepath.Join(privateDir(t), "docker.sock")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
@@ -143,6 +148,29 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 			if f.fault == "start-response" {
 				w.WriteHeader(500)
 				return
+			}
+			w.WriteHeader(204)
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/kill"):
+			signal := r.URL.Query().Get("signal")
+			select {
+			case f.signals <- signal:
+			default:
+			}
+			if signal == "TERM" {
+				f.terms++
+			} else if signal == "KILL" {
+				f.kills++
+			} else {
+				t.Error("unexpected signal")
+			}
+			if signal == "KILL" || f.fault != "ignore-term" {
+				f.container.State.Status = "exited"
+				f.container.State.Running = false
+				f.container.State.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+				f.container.State.ExitCode = 143
+				if signal == "KILL" {
+					f.container.State.ExitCode = 137
+				}
 			}
 			w.WriteHeader(204)
 		default:
@@ -238,6 +266,7 @@ func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
 			f.mu.Lock()
 			f.container.State.Status = "exited"
 			f.container.State.Running = false
+			f.container.State.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 			f.mu.Unlock()
 			if err := j.tick(context.Background(), d, options, &a, true); err != nil {
 				t.Fatal(err)

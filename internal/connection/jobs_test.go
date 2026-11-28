@@ -65,3 +65,18 @@ func TestJobsResponsesAreBoundedAndDoNotReflectSecrets(t *testing.T) {
 		})
 	}
 }
+
+// A connection lost after response headers is still a transient outage, not revocation.
+func TestJobsInterruptedResponseRemainsRetryable(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		fmt.Fprint(w, `{"version":1`)
+	}))
+	defer server.Close()
+	c := trustedClient(t, server)
+	_, err := c.SyncJobs(context.Background(), JobsRequest{Version: 1, WorkerGeneration: workerGeneration})
+	var delivery *JobsError
+	if !errors.As(err, &delivery) || delivery.Permanent() {
+		t.Fatal("interrupted transport treated as permanent control rejection", err)
+	}
+}

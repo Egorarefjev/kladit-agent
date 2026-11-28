@@ -279,19 +279,7 @@ func TestSupervisorRechecksPermissionAndReleasesLock(t *testing.T) {
 		json.NewEncoder(w).Encode(connection.JobsResponse{Version: 1, WorkerGeneration: request.WorkerGeneration})
 	}))
 	defer server.Close()
-	cert := filepath.Join(root, "ca.pem")
-	if err := os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SSL_CERT_FILE", cert)
-	config := filepath.Join(root, "connection.json")
-	token := filepath.Join(root, "token")
-	if err := os.WriteFile(config, []byte(`{"endpoint":"`+server.URL+`/api/v1/agent/metrics"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(token, []byte(strings.Repeat("a", 43)), 0600); err != nil {
-		t.Fatal(err)
-	}
+	config, token := connectionFixture(t, root, server)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -341,5 +329,72 @@ func TestAssignmentSpecComparison(t *testing.T) {
 				t.Fatal("incorrect assignment comparison")
 			}
 		})
+	}
+}
+
+func connectionFixture(t *testing.T, root string, server *httptest.Server) (string, string) {
+	t.Helper()
+	cert := filepath.Join(root, "ca.pem")
+	if err := os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", cert)
+	config := filepath.Join(root, "connection.json")
+	token := filepath.Join(root, "token")
+	if err := os.WriteFile(config, []byte(`{"endpoint":"`+server.URL+`/api/v1/agent/metrics"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(token, []byte(strings.Repeat("a", 43)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return config, token
+}
+
+func TestSupervisorReplaysLegacyReportWithDisabledPolicy(t *testing.T) {
+	j, options, _ := runnerFixture(t, "registry.example/jobs@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	r := j.state.Current
+	r.Runtime = nil
+	r.Acked = false
+	r.Report.Event = connection.JobEvent{Seq: 1, State: "failed", Reason: "RUNNER_NOT_IMPLEMENTED", FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	original := r.Report
+	generation := j.state.Generation
+	if err := j.save(); err != nil {
+		t.Fatal(err)
+	}
+	j.Close()
+	if err := os.WriteFile(options.PolicyPath, []byte(`{"version":1,"capabilities":{"jobs.execute":false}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request connection.JobsRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		if request.ExecuteAllowed || request.Report == nil || *request.Report != original {
+			t.Error("legacy report changed or permission enabled")
+		}
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		json.NewEncoder(w).Encode(connection.JobsResponse{Version: 1, WorkerGeneration: generation, ACK: &connection.JobACK{AttemptID: original.AttemptID, Seq: original.Event.Seq}})
+	}))
+	defer server.Close()
+	options.ConfigPath, options.TokenPath = connectionFixture(t, filepath.Dir(options.StatePath), server)
+	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Second)
+	defer cancel()
+	if err := Run(ctx, options); err == nil || ctx.Err() != nil {
+		t.Fatal("legacy replay did not finish after ACK", err)
+	}
+	saved, err := openJournal(options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer saved.Close()
+	if saved.state.Current != nil {
+		t.Fatal("legacy terminal report was not acknowledged")
 	}
 }

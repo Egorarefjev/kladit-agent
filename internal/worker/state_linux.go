@@ -109,8 +109,39 @@ func validRecord(r *record, generation string) bool {
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(canonical)) != a.SpecHash || a.State != "assigned" || a.AcknowledgedSeq != 0 {
 		return false
 	}
+
+	for _, reason := range []string{r.Runtime.DesiredStop, r.Runtime.StopReason} {
+		switch reason {
+		case "", "CANCEL_REQUESTED", "EXECUTION_DISABLED", "PREPARATION_TIMEOUT", "TIMEOUT", "AGENT_REVOKED", "CONTROL_REJECTED":
+		default:
+			return false
+		}
+	}
+	if r.Runtime.StopReason != "" {
+		if _, err := time.Parse(time.RFC3339Nano, r.Runtime.StopRequestedAt); err != nil {
+			return false
+		}
+	}
+	if r.Runtime.TermSentAt != "" {
+		if _, err := time.Parse(time.RFC3339Nano, r.Runtime.TermSentAt); err != nil || r.Runtime.StopReason == "" {
+			return false
+		}
+	}
+	if r.Runtime.TermAccepted && r.Runtime.TermSentAt == "" {
+		return false
+	}
+	if e := r.Runtime.Exit; e != nil {
+		start, e1 := time.Parse(time.RFC3339Nano, e.StartedAt)
+		end, e2 := time.Parse(time.RFC3339Nano, e.FinishedAt)
+		if e1 != nil || e2 != nil || start.IsZero() || end.Before(start) || e.ExitCode < 0 || e.ExitCode > 255 || r.Runtime.Deadline == "" {
+			return false
+		}
+	}
+	if r.Runtime.Phase == "stopped_before_start" && (r.Runtime.StopReason == "" || r.Runtime.StartedAt != "" || r.Runtime.Deadline != "") {
+		return false
+	}
 	switch r.Runtime.Phase {
-	case "preparing", "start_intent", "running", "exited", "unknown":
+	case "preparing", "start_intent", "running", "exited", "unknown", "stopped_before_start":
 	default:
 		return false
 	}

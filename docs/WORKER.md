@@ -1,15 +1,17 @@
-# Opt-in worker — Jobs steps 3–4
+# Opt-in worker — Jobs steps 3–6a
 
 Canonical plan: [Kladit Jobs MVP](https://github.com/Egorarefjev/kladit/blob/dev/docs/kladit-jobs-mvp.md).
 Wire contract: [Jobs sync v1](https://github.com/Egorarefjev/kladit/blob/dev/docs/job-sync.md).
-Application step 2 (#63) is merged into dev at `1aa3133`. Agent step 3 (#15) is
-verified merged into dev at `bcca01a`. Both main branches were checked before step 4:
-application `c701b3e`, agent `30cb807`. Feature PRs target agent dev.
+Application step 5 (#64) is verified merged into dev at `c80508b`; agent step 4
+(#16) at `369479b`. Step 6a starts from these dev heads. Main was not rechecked
+for this stage at the owner's request. Feature PRs target agent dev.
 
 | Step | PR | Status | Decisions | Next |
 | --- | --- | --- | --- | --- |
 | 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Merged in dev, bcca01a | Separate unit/policy, stable generation, private journal; metrics untouched | 4 |
-| 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Awaiting merge into dev | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5: backend log chunks, after confirmed merge |
+| 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Merged in dev, 369479b | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5 |
+| 5 | [app #64](https://github.com/Egorarefjev/kladit/pull/64) | Merged in dev, c80508b | Bounded backend log chunks | 6a |
+| 6a | [agent #17](https://github.com/Egorarefjev/kladit-agent/pull/17) | Awaiting merge into dev | Local cancel/timeout independent of sync; persisted TERM/KILL and exit evidence; readiness remains false | 6b: bounded durable log delivery, after confirmed merge |
 
 One PR at a time. Verify merges before continuing. After reviewing step 4, future scopes should be split into independently complete
 PRs before implementation where possible; no chain of unfinished dependent PRs.
@@ -37,7 +39,8 @@ private token, never an argv/env bearer. Worker directories are 0700, files 0600
 **This remains a disposable integration profile. Keep `JOBS_ENABLED=false`.** The
 worker still advertises `preflight_ok:false`; the real backend cannot grant a normal
 start permit. This PR supplies and tests Docker execution/reconciliation internally,
-not user-facing Jobs activation. Bounded log delivery/cancel/timeout follows in step 6,
+not user-facing Jobs activation. Cancellation/timeout is implemented in step 6a; bounded durable log delivery follows
+in a separate step 6b PR,
 result finalization in step 8, and full activation/GUI after step 9 verification.
 A Docker exit is reported as `finalizing`, never prematurely as `succeeded`;
 the slot remains reserved until a later durable completion implementation.
@@ -132,19 +135,41 @@ file fsync, atomic rename and directory fsync. Missing/corrupt state never inven
 a new generation. History is bounded to 1024 tombstones; no automatic state wipe.
 Update/uninstall refuses a worker profile until drain/reconciliation is implemented.
 
+## Cancellation and runtime timeout (6a)
+
+One supervisor loop owns the journal. A single bounded HTTP sync runs separately;
+local Docker observations continue every second with a two-second request budget,
+including during API outages. Cleanup rechecks local policy even when no ACK arrives.
+Invalid/disabled policy, owner cancellation/disable, preparation/runtime timeout and
+permanent control rejection stop only the container whose full ID/image/identity
+labels match the persisted attempt. HTTP 401/403 also triggers local cleanup.
+
+Stop reason and TERM intent are persisted before signalling; after ten seconds,
+escalate to KILL. Restart retains that grace deadline and never repeats start.
+A successful signal response is not exit proof: inspect must observe an exit before
+terminal status. An absent container after start intent remains unknown/reserved.
+An exit observed before stop begins wins over a late cancel. Pending lifecycle reports
+remain byte-for-byte stable until ACK; durable exit evidence waits locally, then
+running/finalizing/terminal reports advance in order. Natural exits remain finalizing
+until result persistence is implemented in step 8. Stopped containers/output are kept.
+
+Stopping the supervisor itself releases the journal lock and preserves its state;
+it does not kill a workload merely for a service restart. Local timeout needs a running
+supervisor and responsive Docker: this is not a host-independent execution guarantee.
+
 ## Code and verification
 
 One internal worker package: supervisor in worker_linux.go; assignment/ACK transitions
 in state_linux.go; persistence in journal_linux.go; spec/hash validation in spec_linux.go;
 Docker HTTP in docker_linux.go, the shared profile builder/validator in
-container_profile_linux.go, reconciliation in runner_linux.go; local NVIDIA
+container_profile_linux.go, reconciliation in runner_linux.go; local stop/exit transitions in control_linux.go; local NVIDIA
 preflight in gpu_linux.go. No service/repository abstractions or dependencies added. Read-only preflight reuses
 the same Unix HTTP client with its own five-second deadline and bounded response.
 
 Tests inject lost create/start replies, restart journals between observations, reject
 foreign/missing/created-after-intent containers, preserve pending events and test the
 actual container profile/spec boundary. Native CI runs the complete race/vet suite,
-starts a real digest-resolved busybox container, checks exit/output and retains the
+starts a real digest-resolved busybox container, checks exit/output plus TERM-ignoring workload escalation, and retains the
 existing systemd install/restart/credentials/legacy helper/update/remove checks.
 The native image tag is resolved to an immutable digest for the test only; production
 specs always require a digest. No tests use the user's connected servers.

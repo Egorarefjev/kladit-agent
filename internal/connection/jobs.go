@@ -138,7 +138,13 @@ func (c *Client) SyncJobs(ctx context.Context, request JobsRequest) (JobsRespons
 		return JobsResponse{}, &JobsError{Status: response.StatusCode, Code: code}
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, 32769))
-	if err != nil || len(data) > 32768 {
+	if err != nil {
+		if ctx.Err() != nil {
+			return JobsResponse{}, ctx.Err()
+		}
+		return JobsResponse{}, &JobsError{}
+	}
+	if len(data) > 32768 {
 		return JobsResponse{}, fmt.Errorf("invalid worker response size")
 	}
 	var result JobsResponse
