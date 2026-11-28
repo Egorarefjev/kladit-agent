@@ -54,12 +54,17 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 	defer j.Close()
+	docker := newDocker(options.DockerSocket)
+	defer docker.close()
 	fmt.Fprintln(log, "Worker foundation active; container execution is disabled in this build")
 	failed := false
 	wasHealthy := true
 	for {
 		if ctx.Err() != nil {
 			return nil
+		}
+		if err = j.tick(ctx, docker, options, nil, false); err != nil {
+			return err
 		}
 		p, err = policy.LoadWorker(options.PolicyPath)
 		if err != nil {
@@ -77,6 +82,9 @@ func Run(ctx context.Context, options Options) error {
 		response, syncErr := client.SyncJobs(ctx, request)
 		if syncErr == nil {
 			if err = j.accept(response); err != nil {
+				return err
+			}
+			if err = j.tick(ctx, docker, options, response.Assignment, response.Enabled); err != nil {
 				return err
 			}
 			if failed {

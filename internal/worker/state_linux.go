@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 type record struct {
 	Assignment connection.JobAssignment `json:"assignment"`
 	Report     connection.JobReport     `json:"report"`
+	Acked      bool                     `json:"acked,omitempty"`
+	Runtime    *execution               `json:"runtime,omitempty"`
 }
 
 type journalState struct {
@@ -28,10 +31,14 @@ func (j *journal) accept(response connection.JobsResponse) error {
 		if r == nil || response.ACK.AttemptID != r.Report.AttemptID || response.ACK.Seq != r.Report.Event.Seq {
 			return fmt.Errorf("unexpected worker ACK; reconciliation required")
 		}
-		if err := j.write(".done-"+r.Assignment.AttemptID+".json", r); err != nil {
-			return err
+		if terminalState(r.Report.Event.State) {
+			if err := j.write(".done-"+r.Assignment.AttemptID+".json", r); err != nil {
+				return err
+			}
+			j.state.Current = nil
+		} else {
+			r.Acked = true
 		}
-		j.state.Current = nil
 		if err := j.save(); err != nil {
 			return err
 		}
@@ -68,15 +75,14 @@ func (j *journal) accept(response connection.JobsResponse) error {
 		}
 		r = record{
 			Assignment: *a,
+			Runtime:    &execution{Phase: "preparing"},
 			Report: connection.JobReport{
 				AttemptID:       a.AttemptID,
 				SpecHash:        a.SpecHash,
 				AssignmentToken: a.AssignmentToken,
 				Event: connection.JobEvent{
-					Seq:        1,
-					State:      "failed",
-					FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
-					Reason:     "RUNNER_NOT_IMPLEMENTED",
+					Seq:   1,
+					State: "preparing",
 				},
 			},
 		}
@@ -85,20 +91,57 @@ func (j *journal) accept(response connection.JobsResponse) error {
 	return j.save() // Persist the report before any subsequent sync can acknowledge receipt.
 }
 
+func terminalState(state string) bool {
+	return state == "failed" || state == "succeeded" || state == "cancelled" || state == "timed_out"
+}
+
 func validRecord(r *record, generation string) bool {
 	a := r.Assignment
 	p := r.Report
-	_, err := time.Parse(time.RFC3339Nano, p.Event.FinishedAt)
-	return err == nil &&
-		a.State == "assigned" &&
-		a.AcknowledgedSeq == 0 &&
-		connection.ValidJobAssignment(&a, generation) &&
-		p.AttemptID == a.AttemptID &&
-		p.SpecHash == a.SpecHash &&
-		p.AssignmentToken == a.AssignmentToken &&
-		p.Event.Seq == 1 &&
-		p.Event.State == "failed" &&
-		p.Event.Reason == "RUNNER_NOT_IMPLEMENTED"
+	if !connection.ValidJobAssignment(&a, generation) || p.AttemptID != a.AttemptID || p.SpecHash != a.SpecHash || p.AssignmentToken != a.AssignmentToken || p.Event.Seq == 0 || p.Event.Seq > 9007199254740991 {
+		return false
+	}
+	if r.Runtime == nil {
+		_, err := time.Parse(time.RFC3339Nano, p.Event.FinishedAt)
+		return err == nil && a.State == "assigned" && a.AcknowledgedSeq == 0 && p.Event.Seq == 1 && p.Event.State == "failed" && p.Event.Reason == "RUNNER_NOT_IMPLEMENTED"
+	}
+	canonical, err := canonicalSpec(a.Spec)
+	if err != nil || fmt.Sprintf("%x", sha256.Sum256(canonical)) != a.SpecHash || a.State != "assigned" || a.AcknowledgedSeq != 0 {
+		return false
+	}
+	switch r.Runtime.Phase {
+	case "preparing", "start_intent", "running", "exited", "unknown":
+	default:
+		return false
+	}
+	switch p.Event.State {
+	case "preparing", "running", "finalizing", "unknown", "failed", "cancelled", "timed_out":
+	default:
+		return false
+	}
+	if r.Runtime.ContainerID != "" && !containerID.MatchString(r.Runtime.ContainerID) {
+		return false
+	}
+	if r.Runtime.ImageID != "" && !imageID.MatchString(r.Runtime.ImageID) {
+		return false
+	}
+	if r.Runtime.Phase == "start_intent" || r.Runtime.Phase == "running" || r.Runtime.Phase == "exited" {
+		var spec jobSpec
+		if json.Unmarshal(a.Spec, &spec) != nil || spec.TimeoutSeconds != r.Runtime.TimeoutSeconds {
+			return false
+		}
+		if _, err := time.Parse(time.RFC3339Nano, r.Runtime.Deadline); err != nil {
+			return false
+		}
+		if !containerID.MatchString(r.Runtime.ContainerID) || !imageID.MatchString(r.Runtime.ImageID) || r.Runtime.TimeoutSeconds == 0 || r.Runtime.TimeoutSeconds > 86400 {
+			return false
+		}
+	}
+	if terminalState(p.Event.State) {
+		_, err := time.Parse(time.RFC3339Nano, p.Event.FinishedAt)
+		return err == nil
+	}
+	return p.Event.FinishedAt == ""
 }
 
 func sameAssignment(a, b connection.JobAssignment) bool {
@@ -116,15 +159,4 @@ func sameAssignment(a, b connection.JobAssignment) bool {
 		a.SpecHash == b.SpecHash &&
 		a.AssignmentToken == b.AssignmentToken &&
 		bytes.Equal(first, second)
-}
-
-func canonicalSpec(spec json.RawMessage) ([]byte, error) {
-	// Compare JSON values, not object-key order. This is not the backend's spec_hash algorithm.
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(spec))
-	decoder.UseNumber()
-	if err := decoder.Decode(&value); err != nil {
-		return nil, err
-	}
-	return json.Marshal(value)
 }

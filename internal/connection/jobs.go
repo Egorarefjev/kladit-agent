@@ -12,12 +12,16 @@ import (
 	"time"
 )
 
-// JobEvent is a durable report. This foundation can only report an unsupported runner.
+// JobEvent is one durable report replayed unchanged until acknowledged.
 type JobEvent struct {
-	Seq        uint64 `json:"seq"`
-	State      string `json:"state"`
-	FinishedAt string `json:"finished_at"`
-	Reason     string `json:"reason"`
+	Seq         uint64 `json:"seq"`
+	State       string `json:"state"`
+	FinishedAt  string `json:"finished_at,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	ContainerID string `json:"container_id,omitempty"`
+	StartedAt   string `json:"started_at,omitempty"`
+	ExitCode    *int   `json:"exit_code,omitempty"`
+	OOMKilled   *bool  `json:"oom_killed,omitempty"`
 }
 
 // JobReport binds an event to the existing machine's assignment.
@@ -39,7 +43,7 @@ type JobsRequest struct {
 	Report           *JobReport `json:"report,omitempty"`
 }
 
-// JobAssignment is opaque execution data at step 3; nothing is executed from it.
+// JobAssignment is transport data; the worker validates the executable spec locally.
 type JobAssignment struct {
 	JobID                string          `json:"job_id"`
 	AttemptID            string          `json:"attempt_id"`

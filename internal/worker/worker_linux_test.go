@@ -2,9 +2,11 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +31,13 @@ func privateDir(t *testing.T) string {
 }
 
 func assignmentFixture(generation string) connection.JobAssignment {
-	return connection.JobAssignment{JobID: "12345678-1234-4234-8234-123456789aaa", AttemptID: "12345678-1234-4234-8234-123456789bbb", WorkerGeneration: generation, Spec: json.RawMessage(`{"argv":["/bin/true"],"network":"none"}`), SpecHash: strings.Repeat("a", 64), AssignmentToken: strings.Repeat("b", 43), State: "assigned", PrepareDeadlineAt: time.Now().Add(10 * time.Minute)}
+	a := connection.JobAssignment{JobID: "12345678-1234-4234-8234-123456789aaa", AttemptID: "12345678-1234-4234-8234-123456789bbb", WorkerGeneration: generation, Spec: json.RawMessage(`{"argv":["/bin/true"],"network":"none"}`), SpecHash: strings.Repeat("a", 64), AssignmentToken: strings.Repeat("b", 43), State: "assigned", PrepareDeadlineAt: time.Now().Add(10 * time.Minute)}
+	canonical, err := canonicalSpec(a.Spec)
+	if err != nil {
+		panic(err)
+	}
+	a.SpecHash = fmt.Sprintf("%x", sha256.Sum256(canonical))
+	return a
 }
 
 func TestJournalRestartLockACKAndTombstone(t *testing.T) {
@@ -47,8 +55,8 @@ func TestJournalRestartLockACKAndTombstone(t *testing.T) {
 		t.Fatal(err)
 	}
 	report := j.state.Current.Report
-	if report.Event.State != "failed" || report.Event.Reason != "RUNNER_NOT_IMPLEMENTED" {
-		t.Fatal("foundation tried to prepare or start execution")
+	if report.Event.State != "preparing" {
+		t.Fatal("assignment was not durably prepared")
 	}
 	if err = j.Close(); err != nil {
 		t.Fatal(err)
@@ -72,8 +80,18 @@ func TestJournalRestartLockACKAndTombstone(t *testing.T) {
 	if err = j.accept(connection.JobsResponse{ACK: &connection.JobACK{AttemptID: a.AttemptID, Seq: 1}}); err != nil {
 		t.Fatal(err)
 	}
+	if j.state.Current == nil || !j.state.Current.Acked {
+		t.Fatal("preparing ACK lost active state")
+	}
+	if err = j.emit("failed", "PREPARATION_FAILED", nil); err != nil {
+		t.Fatal(err)
+	}
+	report = j.state.Current.Report
+	if err = j.accept(connection.JobsResponse{ACK: &connection.JobACK{AttemptID: a.AttemptID, Seq: 2}}); err != nil {
+		t.Fatal(err)
+	}
 	if j.state.Current != nil {
-		t.Fatal("ACK did not close pending report")
+		t.Fatal("terminal ACK did not close report")
 	}
 	// Backend replay, even after ACK, must reuse exactly the old terminal event.
 	if err = j.accept(connection.JobsResponse{Assignment: &a}); err != nil {

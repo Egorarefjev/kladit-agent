@@ -1,62 +1,54 @@
-# Opt-in worker foundation — Jobs step 3
+# Opt-in worker — Jobs steps 3–4
 
-This build adds `kladit-agent worker`, a separate long-lived systemd profile,
-read-only local runtime preflight and a private durable journal. **It cannot create,
-start or stop a container.** It always sends `preflight_ok:false`, even when its
-local prerequisite checks pass. Keep backend `JOBS_ENABLED=false` until step 9.
-Existing metrics policy, oneshot timer, enrollment response and metrics `204` remain
-unchanged. No existing installation automatically receives Docker access.
-
-The canonical plan is [Kladit Jobs MVP](https://github.com/Egorarefjev/kladit/blob/dev/docs/kladit-jobs-mvp.md).
-The backend wire contract is [Jobs sync v1](https://github.com/Egorarefjev/kladit/blob/dev/docs/job-sync.md).
-PR #63 is verified merged in application `dev` at `1aa3133`. The agent gained its own
-`dev` branch from `30cb807`; feature PRs for these worker steps target `dev`.
-A merge here does not publish a release or install anything on user machines.
+Canonical plan: [Kladit Jobs MVP](https://github.com/Egorarefjev/kladit/blob/dev/docs/kladit-jobs-mvp.md).
+Wire contract: [Jobs sync v1](https://github.com/Egorarefjev/kladit/blob/dev/docs/job-sync.md).
+Application step 2 (#63) is merged into dev at `1aa3133`. Agent step 3 (#15) is
+verified merged into dev at `bcca01a`. Both main branches were checked before step 4:
+application `c701b3e`, agent `30cb807`. Feature PRs target agent dev.
 
 | Step | PR | Status | Decisions | Next |
 | --- | --- | --- | --- | --- |
-| 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Awaiting merge into agent dev | Separate local permission/unit; stable journal generation; read-only preflight; execution disabled; legacy install untouched | 4: Docker create/start/inspect and reconciliation, after confirmed merge |
+| 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Merged in dev, bcca01a | Separate unit/policy, stable generation, private journal; metrics untouched | 4 |
+| 4 | Current runner PR | Awaiting merge into dev | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5: backend log chunks, after confirmed merge |
 
-After agent PR merges, update this row in the next agent PR. The next application
-PR updates the canonical application journal with merged agent steps; do not open a
-second companion PR just to update its journal. For a new chat, read both the
-canonical plan and this current agent-side status, and verify merge facts on GitHub.
+One PR at a time. Verify merges before continuing. The next application PR updates
+its canonical progress table with merged agent steps; no companion PR just for that
+journal. A merge publishes no release and installs nothing on user machines.
 
-## Trust and opt-in
+## Activation and current boundary
 
-The profile uses **rootful Docker** for the owner's trusted workloads. Access to its
-socket is host-level authority if the worker is compromised; unit hardening does not
-turn Docker into a secure host sandbox. Foreign untrusted code and rootless/GPU
-isolation profiles are not implemented here. A local opt-in and later owner opt-in
-in Kladit are separate checks, neither overrides the other.
-
-The normal installer still installs only metrics units. A bundle from this PR also
-contains a separate installer for an **existing, connected, worker-capable agent**:
+`kladit-agent worker` is a separate long-lived systemd unit. Existing metrics policy,
+oneshot timer, enrollment and metrics 204 do not change. The normal installer grants
+no Docker access. On an existing connected, worker-capable installation:
 
 ```sh
 sudo sh scripts/worker-install.sh --allow-docker-worker --check
 sudo sh scripts/worker-install.sh --allow-docker-worker
 ```
 
-The first command changes nothing and checks installation prerequisites, not backend
-availability or successful execution. The second refuses existing worker users,
-units, policies or state instead of overwriting them. It creates dedicated static
-user `kladit-worker` with no login/home and installs `kladit-worker.service` with
-`SupplementaryGroups=docker`. The metrics user/unit gains no Docker membership.
-Before activation it refreshes the installed uninstaller from this bundle, since
-binary-only updates leave older helpers unchanged. `--check` leaves that helper
-untouched. This ensures the documented uninstall command refuses an active worker.
-It reuses the existing machine identity through systemd `LoadCredential`, copied as
-0600 into the worker's private runtime directory; no token is passed in argv/env.
+The check changes nothing. Installation refuses an existing worker user, unit, policy
+or state. It refreshes the installed uninstaller from the bundle before activation,
+since binary-only updates retain old helpers. Only the worker unit gets Docker group
+membership. The static user has no login/home; systemd LoadCredential delivers a
+private token, never an argv/env bearer. Worker directories are 0700, files 0600.
 
-The installer requires the standard root-owned 0755 agent directories, existing
-private token, readable root-owned connection config, Docker group/socket and a
-running Linux systemd instance. No Docker install, firewall changes or incoming
-worker port is performed. Failure is explicit; it never replaces an existing worker.
-This foundation is for disposable integration testing until the remaining runner,
-drain and lifecycle steps are finished.
+**This remains a disposable integration profile. Keep `JOBS_ENABLED=false`.** The
+worker still advertises `preflight_ok:false`; the real backend cannot grant a normal
+start permit. This PR supplies and tests Docker execution/reconciliation internally,
+not user-facing Jobs activation. Bounded log delivery/cancel/timeout follows in step 6,
+result finalization in step 8, and full activation/GUI after step 9 verification.
+A Docker exit is reported as `finalizing`, never prematurely as `succeeded`;
+the slot remains reserved until a later durable completion implementation.
 
-`/etc/kladit-agent/worker-policy.json` is independent from the unchanged metrics policy:
+Rootful Docker socket access grants host-level authority if the worker is compromised.
+This profile is for the owner's trusted workloads on a dedicated Linux worker, not
+foreign untrusted code or a host sandbox. `PrivateDevices=no` on this worker unit
+allows local NVIDIA device inspection; the metrics unit is unchanged. Unit hardening
+cannot turn rootful Docker access into a security boundary against a captured runner.
+
+## Policy and supported resources
+
+The separate worker policy is deny-by-default and reloaded before every sync/start:
 
 ```json
 {
@@ -64,106 +56,92 @@ drain and lifecycle steps are finished.
   "capabilities": { "jobs.execute": true },
   "limits": { "cpu_millis": 1000, "memory_bytes": 1073741824, "timeout_seconds": 3600 },
   "min_free_disk_bytes": 1073741824,
-  "min_free_memory_bytes": 67108864
+  "min_free_memory_bytes": 67108864,
+  "gpus": [],
+  "gpu_idle_memory_bytes": 0
 }
 ```
 
-Unknown fields/capabilities, duplicate keys, non-integers, missing/invalid limits and
-oversized files fail closed. Missing/false `jobs.execute` prevents initial activation.
-An already initialized worker may send control/ACK state with execute permission
-false after local revocation, then exits; it never uses that to start work. Invalid
-policy stops the process. Policy is reloaded before each outgoing sync.
-Resource maxima are validated now and will be enforced by the runner in step 4;
-there is no executable job path that could silently ignore them in this build.
+Limits, safe integers, unknown fields, duplicate keys and oversized policy fail closed.
+At most 16 unique GPU UUIDs are allowed. Idle GPU memory allowance is local and capped
+at 1 GiB; default zero. Before create and again immediately before start, require
+rootful Linux Docker, cgroup v2 and CPU quota/memory/swap/PID support, host free RAM
+at least the job memory limit, free disk and a matching image architecture.
 
-## Preflight and transport
+GPU requests must select one explicitly allowlisted UUID. Fresh bounded two-second
+`nvidia-smi` CSV queries check total/used VRAM, zero utilization, disabled display/MIG,
+default compute mode and no compute processes on that GPU. Unknown/missing data deny
+start. VRAM is a suitability check, not a quota. This cannot prevent another host
+process taking the GPU after preflight; dedicate the worker. NVIDIA driver/runtime
+behavior still requires a real GPU integration host.
 
-Local preflight only performs GET `/info` through the configured Unix Docker socket,
-with bounded reads, a five-second deadline and context cancellation. It requires
-Linux/host architecture, cgroup v2, memory/swap/CPU quota/PID limit support and rejects
-rootless mode for this profile. It also checks current host available RAM and free
-disk against policy. No CLI shell, arbitrary host command or Docker mutation is used.
-GPU/process checks, image compatibility and per-job resource checks follow in step 4;
-this preflight is not proof of NVIDIA isolation or capacity reservation.
+Step 4 supports the default local output storage only. Input IDs, secret refs, other
+storage IDs and remote/delete-source destinations fail explicitly; they are never
+silently ignored or translated into arbitrary host paths. Local resource allowlists
+and result lifecycle must be completed before exposing their UI. Public digest-pinned
+images only; no registry credentials or host shell. Images with Docker VOLUME metadata
+are rejected rather than adding implicit writable volumes.
 
-The worker derives `/api/v1/agent/jobs/sync` from the configured canonical metrics
-endpoint on the same HTTPS origin. It reuses the existing machine transport: verified
-TLS, no environment proxy, no redirects, a ten-second request deadline, bounded 16 KiB
-requests/32 KiB responses and sanitized failures. Version, generation, ACK/assignment
-bindings are checked before journal processing. It polls every five seconds; transient
-network/5xx/429/408 and `409 WORKER_BUSY` preserve state and retry. Other 3xx/4xx,
-malformed responses and generation conflicts stop instead of adopting another identity.
-HTTP errors never print the response body, endpoint or bearer.
+The typed bounded spec is validated against local maxima and the backend spec hash.
+Canonical JSON preserves exact integers and JSON.stringify string escaping; a golden
+fixture from the actual JavaScript backend covers HTML characters and Unicode.
+Runtime/device env from a job is rejected. Container env explicitly overrides image
+NVIDIA visibility/capabilities and CUDA visibility; DeviceRequests selects the UUID.
 
-For an explicit local check (no backend request or journal creation):
+## Container profile and state
 
-```sh
-kladit-agent worker --check --policy /path/worker-policy.json \
-  --config /path/connection.json --token-file /path/private-token \
-  --state /path/private-worker-state --docker-socket /run/docker.sock
-```
+Name `kladit-<attempt UUID>` and labels bind job, attempt, spec hash and generation.
+Pull/inspect image before create, pin the resolved image ID, and verify container ID,
+image and labels before adopting an existing container. No automatic container removal.
+Create can be retried only through deterministic-name lookup, not a blind new container.
 
-It checks local prerequisites only and explicitly reports that execution is disabled.
-The backend registration can appear through its internal worker endpoint after
-activation, but this PR adds no browser UI and cannot make ordinary Jobs runnable.
+Fixed profile: restart=no, no auto-remove/privileged/host PID/IPC/network or ports,
+cap-drop ALL, no-new-privileges, read-only rootfs, private IPC, bounded tmpfs/shm/PIDs,
+CPU CFS quota and hard RAM limit with swap disabled. Entrypoint/Cmd are replaced by
+explicit argv. Image healthchecks are disabled. UID/GID equal the local worker's
+static UID/GID. Only a per-attempt output directory is bind mounted at `/output:rw`,
+which is also the working directory. Local Docker logging is bounded/non-blocking;
+backend chunk delivery is the later logs step. Bind output has no hard disk quota.
 
-## Journal and recovery
+Assignment persistence precedes `preparing` seq 1. Nonterminal ACK marks that report
+confirmed without discarding the active record. Start additionally requires owner
+permission, the same assignment, a preparing ACK, a fresh start permit, an unexpired
+preparation deadline and a fresh local policy/preflight. Immediately before the
+single Docker start call, persist `start_intent`, container ID and a provisional
+local deadline. The observed Docker start timestamp later fixes the runtime deadline.
 
-The private state directory (default `/var/lib/kladit-worker`) must be owned by the
-worker UID with mode 0700. Files are private regular 0600 files, reject symlinks and
-hard links, and are opened relative to an `os.Root` anchor. A retained `.lock` file
-uses nonblocking exclusive `flock`; it is never unlinked during release, preventing
-two supervisors from using different lock inodes. SIGTERM/context cancellation exits
-the synchronous loop and releases resources.
+After restart or a lost create/start response, inspect before any new sync/start:
 
-`state.json` pins a randomly generated UUID generation before the first sync. The
-journal uses exclusive random temporary files, file fsync, atomic same-directory
-rename and directory fsync. Restarts reuse the generation and exact pending report.
-A missing journal alongside its existing lock is treated as lost state, not a fresh
-installation. Corrupt/unknown versions or unknown execution states require
-reconciliation. Do not delete the directory to bypass backend generation pinning.
+- Created with no start intent: preparation may continue under a new valid permit.
+- Running/exited after intent: report the first start once; then observe, never restart.
+- Created/absent after intent, mismatched labels/ID/image or unknown state: preserve
+  the reservation and report `unknown`; never retry start.
+- Exit: retain output/container and report `finalizing`; later completion must prove
+  local result persistence before releasing the slot.
 
-No normal job can be assigned while this build advertises `preflight_ok:false`.
-If a backend nevertheless delivers a new `assigned` attempt, this build durably records
-its identity/spec/token and one `failed / RUNNER_NOT_IMPLEMENTED` event before sending
-anything back. It never sends `preparing` or consumes a start permit. A changed
-assignment before ACK or an unexpected already-started assignment blocks recovery.
-The spec is opaque data at this stage; local semantic JSON comparison catches changed
-redelivery, but is not the backend's `spec_hash` canonicalization algorithm. Step 4
-must validate the executable spec and hash before introducing an execution path.
+An unacknowledged event is replayed unchanged. Durable terminal tombstones survive
+restarts and redelivery. Step 3 terminal journal records are still readable. Files
+use an os.Root anchor, no-follow/private regular checks, exclusive retained flock,
+file fsync, atomic rename and directory fsync. Missing/corrupt state never invents
+a new generation. History is bounded to 1024 tombstones; no automatic state wipe.
+Update/uninstall refuses a worker profile until drain/reconciliation is implemented.
 
-ACK handling writes a private `.done-<attempt-id>.json` tombstone before clearing the
-pending record. A duplicate delivery reuses that terminal event instead of creating
-another lifecycle. A crash between tombstone creation and state clearing safely
-replays the same report. Tombstones are not automatically removed; at 1024 records
-(or excess unexpected directory entries) new assignments are refused. Generation
-retirement and retention require explicit later reconciliation.
+## Code and verification
 
-Metrics binary update/uninstall scripts refuse installations with a worker unit
-before replacing the shared binary or stopping metrics. Safe worker update/removal,
-active-state reconciliation and retained output handling belong to later lifecycle
-steps; no blind state wipe or container stop is implemented in this foundation.
+One internal worker package: supervisor in worker_linux.go; assignment/ACK transitions
+in state_linux.go; persistence in journal_linux.go; spec/hash validation in spec_linux.go;
+Docker HTTP/profile and reconciliation in docker_linux.go/runner_linux.go; local NVIDIA
+preflight in gpu_linux.go. No service/repository abstractions or dependencies added.
 
-## Code boundaries
+Tests inject lost create/start replies, restart journals between observations, reject
+foreign/missing/created-after-intent containers, preserve pending events and test the
+actual container profile/spec boundary. Native CI runs the complete race/vet suite,
+starts a real digest-resolved busybox container, checks exit/output and retains the
+existing systemd install/restart/credentials/legacy helper/update/remove checks.
+The native image tag is resolved to an immutable digest for the test only; production
+specs always require a digest. No tests use the user's connected servers.
 
-Within `internal/worker`, `worker_linux.go` owns startup and the sync loop,
-`state_linux.go` owns assignment/ACK transitions and record validation,
-`journal_linux.go` owns private filesystem persistence and locking, and
-`preflight_linux.go` owns read-only runtime checks. These are files in one package,
-not additional service/repository layers. Spec comparison shares one JSON decoder
-with `UseNumber`, preserving large integers and ignoring object-key order.
-The architecture review keeps step 3 and its execution-disabled behavior unchanged.
-
-## Verification boundary
-
-Go tests cover policy deny/duplicates/limits, HTTPS sync and sanitized/bounded errors,
-real filesystem journal restart/ACK/tombstones, file permissions, symlinks, missing
-state and exclusive locks. Read-only preflight is tested through a Unix-socket Docker
-fixture. Native Linux CI also installs the actual worker unit on a disposable host,
-checks private credentials/state, stable generation across service restart, separate
-Docker group membership, backend registration and update/uninstall refusal. Ordinary
-metrics install/update/remove/reinstall checks remain enabled.
-
-These checks do not prove Docker execution, GPU access/isolation, power-loss durability
-of every filesystem or the end-to-end host reboot scenario. Those are subsequent
-runner/lifecycle checks, not passing claims for this step.
+Local restricted environments may deny Unix sockets: those tests remain enabled in
+native CI, not skipped/weakened. Docker CPU tests and NVIDIA command fixtures do not
+prove GPU isolation, every power-loss filesystem case or host-reboot behavior. These
+remain explicit integration boundaries for subsequent lifecycle/activation work.
