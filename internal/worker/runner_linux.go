@@ -81,7 +81,7 @@ func buildContainer(r *record, s jobSpec, output string) containerConfig {
 		h.DeviceRequests = []deviceRequest{{Driver: "nvidia", DeviceIDs: []string{*s.GPUUUID}, Capabilities: [][]string{{"gpu"}}}}
 	}
 	h.LogConfig.Type = "local"
-	h.LogConfig.Config = map[string]string{"max-size": "10m", "max-file": "1", "mode": "non-blocking", "max-buffer-size": "1m"}
+	h.LogConfig.Config = map[string]string{"max-size": "10m", "max-file": "1", "compress": "false", "mode": "non-blocking", "max-buffer-size": "1m"}
 	return config
 }
 
