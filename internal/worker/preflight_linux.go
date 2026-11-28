@@ -70,8 +70,12 @@ func preflight(ctx context.Context, p policy.Worker, statePath, socket string) e
 	if err != nil || available < p.MinFreeMemoryBytes {
 		return fmt.Errorf("MEMORY_UNAVAILABLE")
 	}
+	diskPath := statePath
+	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
+		diskPath = filepath.Dir(statePath)
+	}
 	var disk syscall.Statfs_t
-	if syscall.Statfs(filepath.Dir(statePath), &disk) != nil || disk.Bsize <= 0 || disk.Bavail < uint64(p.MinFreeDiskBytes)/uint64(disk.Bsize)+1 {
+	if syscall.Statfs(diskPath, &disk) != nil || disk.Bsize <= 0 || disk.Bavail < uint64(p.MinFreeDiskBytes)/uint64(disk.Bsize)+1 {
 		return fmt.Errorf("DISK_UNAVAILABLE")
 	}
 	return nil
