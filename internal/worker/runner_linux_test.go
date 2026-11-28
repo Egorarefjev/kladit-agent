@@ -90,7 +90,11 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 		case r.Method == "GET" && r.URL.Path == "/info":
 			json.NewEncoder(w).Encode(engineInfo())
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/images/"):
-			json.NewEncoder(w).Encode(imageInfo{ID: "sha256:" + strings.Repeat("a", 64), OS: "linux", Architecture: runtime.GOARCH})
+			image := imageInfo{ID: "sha256:" + strings.Repeat("a", 64), OS: "linux", Architecture: runtime.GOARCH}
+			if f.fault == "image-profile" {
+				image.Config.Volumes = map[string]json.RawMessage{"/unexpected": json.RawMessage(`{}`)}
+			}
+			json.NewEncoder(w).Encode(image)
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/containers/"):
 			if f.container == nil {
 				w.WriteHeader(404)
@@ -143,7 +147,7 @@ func fakeRunnerDocker(t *testing.T) (*dockerClient, string, *fakeEngine) {
 }
 
 func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
-	for _, fault := range []string{"none", "create-response", "start-response", "before-start", "missing-after-intent", "foreign-container"} {
+	for _, fault := range []string{"image-profile", "none", "create-response", "start-response", "before-start", "missing-after-intent", "foreign-container"} {
 		t.Run(fault, func(t *testing.T) {
 			d, socket, f := fakeRunnerDocker(t)
 			j, options, a := runnerFixture(t, "registry.example/jobs@sha256:"+strings.Repeat("a", 64))
@@ -193,6 +197,14 @@ func TestRunnerCreateStartFaultsAndRestart(t *testing.T) {
 			}
 			defer j.Close()
 			f.mu.Lock()
+			if fault == "image-profile" {
+				creates, starts := f.creates, f.starts
+				f.mu.Unlock()
+				if creates != 0 || starts != 0 || j.state.Current.Report.Event.State != "failed" || j.state.Current.Report.Event.Reason != "IMAGE_PROFILE_UNSUPPORTED" {
+					t.Fatal("unsupported image did not fail durably")
+				}
+				return
+			}
 			if fault == "before-start" || fault == "missing-after-intent" || fault == "foreign-container" {
 				if f.starts != 0 || j.state.Current.Report.Event.State != "unknown" {
 					f.mu.Unlock()
