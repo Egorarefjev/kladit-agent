@@ -1,0 +1,39 @@
+[Unit]
+Description=Kladit opt-in Docker worker foundation
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=kladit-worker
+SupplementaryGroups=docker
+StateDirectory=kladit-worker
+StateDirectoryMode=0700
+RuntimeDirectory=kladit-worker
+RuntimeDirectoryMode=0700
+LoadCredential=agent-token:/etc/kladit-agent/token
+ExecStartPre=/usr/bin/install -m 0600 %d/agent-token /run/kladit-worker/token
+ExecStart=/usr/local/lib/kladit-agent/kladit-agent worker --token-file /run/kladit-worker/token
+Restart=on-failure
+RestartSec=30s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+MemoryMax=128M
+TasksMax=32
+TimeoutStopSec=15s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

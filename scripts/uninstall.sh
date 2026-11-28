@@ -7,6 +7,10 @@ if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ "$1" != --confirm ] || { [ "$#" -eq 2 ]
     exit 2
 fi
 [ "$(id -u)" -eq 0 ] || { printf '%s\n' 'Root is required.' >&2; exit 1; }
+if [ -e /etc/systemd/system/kladit-worker.service ] || [ -L /etc/systemd/system/kladit-worker.service ]; then
+    printf '%s\n' 'Worker profile installed; drain/removal support is required before uninstalling the shared agent binary.' >&2
+    exit 1
+fi
 systemctl disable --now kladit-agent.timer
 systemctl stop kladit-agent.service
 rm -f /etc/systemd/system/kladit-agent.timer /etc/systemd/system/kladit-agent.service

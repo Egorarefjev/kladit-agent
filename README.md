@@ -208,3 +208,11 @@ Bootstrap проверяет SHA-256 комплекта. Контрольные 
 `go test -race ./...` проверяет тип ошибок доставки, отсутствие чувствительных данных в ошибках и различие кодов CLI. Отдельный systemd-сценарий `tests/update-systemd.sh` запускается существующим CI после установки TLS fixture; он требует одноразового Linux-хоста с root и не предназначен для пользовательского сервера. Проверяются реальные бинарники и unit-файлы 0.2.1/0.3.0, недоступный DNS, отказ соединения, недоверенный TLS, HTTP 401/500, восстановление доставки, сохранность конфигурации/токена/units/overrides, активный и остановленный таймер, повторное обновление, локальные ошибки и SIGQUIT.
 
 Это изменение не переписывает immutable release 0.4.0: для доставки исправления требуется следующий отдельно подготовленный и опубликованный релиз. Изменение обработки доставки должно попасть в новый релиз вместе с актуальным workflow. Обновление остаётся binary-only: например, старый unit 0.2.1 с `PrivateDevices=yes` сохраняется и может ограничивать NVIDIA telemetry; миграция systemd permissions в данное исправление не входит.
+
+## Opt-in worker foundation
+
+Jobs step 3 adds a separate Docker worker profile for disposable integration testing.
+It is not installed/enabled by the metrics installer and cannot execute containers.
+Worker policy, installation, recovery constraints and implementation progress:
+[docs/WORKER.md](docs/WORKER.md). Keep backend `JOBS_ENABLED=false` until the full
+runner/results/UI checks are complete; merging this PR does not publish a release.
