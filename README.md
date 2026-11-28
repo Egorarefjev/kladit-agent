@@ -211,8 +211,8 @@ Bootstrap проверяет SHA-256 комплекта. Контрольные 
 
 ## Opt-in worker foundation
 
-Jobs steps 3–4 add a separate worker profile and Docker create/start/reconciliation
-for disposable integration testing. The metrics installer does not enable it.
+Jobs steps 3–6b add a separate worker profile, Docker create/start/reconciliation,
+cancel/timeout and bounded durable log delivery for disposable integration testing. The metrics installer does not enable it.
 Readiness stays false until the remaining lifecycle/results checks are complete.
 Worker policy, installation, recovery constraints and implementation progress:
 [docs/WORKER.md](docs/WORKER.md). Keep backend `JOBS_ENABLED=false` until the full

@@ -1,9 +1,9 @@
-# Opt-in worker — Jobs steps 3–6a
+# Opt-in worker — Jobs steps 3–6b
 
 Canonical plan: [Kladit Jobs MVP](https://github.com/Egorarefjev/kladit/blob/dev/docs/kladit-jobs-mvp.md).
 Wire contract: [Jobs sync v1](https://github.com/Egorarefjev/kladit/blob/dev/docs/job-sync.md).
 Application step 5 (#64) is verified merged into dev at `c80508b`; agent step 4
-(#16) at `369479b`. Step 6a starts from these dev heads. Main was not rechecked
+(#16) at `369479b`; step 6a (#17) at `8e90e70`. Step 6b starts from agent dev `8e90e70`. Main was not rechecked
 for this stage at the owner's request. Feature PRs target agent dev.
 
 | Step | PR | Status | Decisions | Next |
@@ -11,7 +11,8 @@ for this stage at the owner's request. Feature PRs target agent dev.
 | 3 | [agent #15](https://github.com/Egorarefjev/kladit-agent/pull/15) | Merged in dev, bcca01a | Separate unit/policy, stable generation, private journal; metrics untouched | 4 |
 | 4 | [agent #16](https://github.com/Egorarefjev/kladit-agent/pull/16) | Merged in dev, 369479b | Deterministic create; durable one-way start intent; inspect-only recovery; CPU/RAM/GPU profile; readiness remains false | 5 |
 | 5 | [app #64](https://github.com/Egorarefjev/kladit/pull/64) | Merged in dev, c80508b | Bounded backend log chunks | 6a |
-| 6a | [agent #17](https://github.com/Egorarefjev/kladit-agent/pull/17) | Awaiting merge into dev | Local cancel/timeout independent of sync; persisted TERM/KILL and exit evidence; readiness remains false | 6b: bounded durable log delivery, after confirmed merge |
+| 6a | [agent #17](https://github.com/Egorarefjev/kladit-agent/pull/17) | Merged in dev, 8e90e70 | Local cancel/timeout independent of sync; persisted TERM/KILL and exit evidence; readiness remains false | 6b |
+| 6b | [agent #18](https://github.com/Egorarefjev/kladit-agent/pull/18) | Awaiting merge into dev | Independent bounded durable stdout/stderr delivery; restart/retry and truncation; readiness remains false | 7: application result read/relay after confirmed merge |
 
 One PR at a time. Verify merges before continuing. After reviewing step 4, future scopes should be split into independently complete
 PRs before implementation where possible; no chain of unfinished dependent PRs.
@@ -39,8 +40,7 @@ private token, never an argv/env bearer. Worker directories are 0700, files 0600
 **This remains a disposable integration profile. Keep `JOBS_ENABLED=false`.** The
 worker still advertises `preflight_ok:false`; the real backend cannot grant a normal
 start permit. This PR supplies and tests Docker execution/reconciliation internally,
-not user-facing Jobs activation. Cancellation/timeout is implemented in step 6a; bounded durable log delivery follows
-in a separate step 6b PR,
+not user-facing Jobs activation. Cancellation/timeout is implemented in step 6a and bounded durable log delivery in step 6b;
 result finalization in step 8, and full activation/GUI after step 9 verification.
 A Docker exit is reported as `finalizing`, never prematurely as `succeeded`;
 the slot remains reserved until a later durable completion implementation.
@@ -110,7 +110,7 @@ CPU CFS quota and hard RAM limit with swap disabled. Entrypoint/Cmd are replaced
 explicit argv. Image healthchecks are disabled. UID/GID equal the local worker's
 static UID/GID. Only a per-attempt output directory is bind mounted at `/output:rw`,
 which is also the working directory. Local Docker logging is bounded/non-blocking;
-backend chunk delivery is the later logs step. Bind output has no hard disk quota.
+backend chunk delivery is described below. Bind output has no hard disk quota.
 
 Assignment persistence precedes `preparing` seq 1. Nonterminal ACK marks that report
 confirmed without discarding the active record. Start additionally requires owner
@@ -157,19 +157,61 @@ Stopping the supervisor itself releases the journal lock and preserves its state
 it does not kill a workload merely for a service restart. Local timeout needs a running
 supervisor and responsive Docker: this is not a host-independent execution guarantee.
 
+## Bounded log delivery (6b)
+
+Requires application step 5 / migration 014, already merged into application dev.
+The separate machine-authenticated `/api/v1/agent/jobs/logs` contract is
+[job-logs.md](https://github.com/Egorarefjev/kladit/blob/dev/docs/job-logs.md).
+One sequence combines stdout/stderr; raw bytes (including NUL and partial UTF-8)
+are sent as base64 in chunks of at most 8192 bytes. Short messages from the same
+stream are batched into one chunk. Docker timestamps/framing are removed. No workload text, raw response or assignment credential enters service logs.
+
+Each attempt retains one pending chunk and two Docker cursors in its private,
+atomic/fsynced journal. Collection and upload are separate bounded tasks: persist
+before upload, replay the identical chunk after a lost response or restart, and
+advance only after its exact ACK. Lifecycle events have independent sequences.
+Terminal ACK moves this spool into the existing bounded tombstone history; tails
+continue round-robin even when another attempt is current. The in-memory queue
+rebuilds on restart and examines at most 16 old records per pass. This does not hold or
+release the compute slot. The existing 1024-attempt history limit also bounds spool
+storage (at most 8 MiB raw pending bytes, plus bounded specs/cursors/JSON overhead).
+
+One log task at a time runs independently from sync and local TERM/KILL observation.
+Collection has a two-second budget, upload ten seconds; uploads are at most one per
+second. Transient/429 failures use capped backoff and bounded Retry-After. Local
+policy is checked before both collection and upload. Owner disable can still drain
+already assigned logs; local execute denial suppresses log data. Upload 401/403
+also triggers local cleanup. Gap/conflict/expired/permanent log rejections retain a
+blocked spool for reconciliation without rebasing sequence or stopping compute.
+
+Collection replays only the current timestamp boundary (`since` with nanoseconds),
+verifies its timestamped prefix hash, and caps boundary reads at 16 MiB with constant
+memory. This avoids rescanning the entire attempt for every chunk. Both streams
+must reach EOF after observed Docker exit before collection finishes normally.
+Missing/foreign containers, changed retained prefixes, unsupported/malformed frames,
+10 MiB payload or 16384 data chunks close with one durable empty truncation marker.
+A backend quota rejection replaces the rejected data only when it confirms that
+same sequence is still unconsumed. Marker retries are identical too.
+
+Docker's existing local/non-blocking 10 MiB log configuration stays bounded. Logs
+are best effort before capture: Docker can drop bytes under buffer pressure, or
+rotate before a first cursor exists, without exposing a loss counter. Those losses
+cannot be proved by this API; this is not a lossless audit log. Observed cursor
+losses are always marked. Full result persistence/finalization remains step 8.
+
 ## Code and verification
 
 One internal worker package: supervisor in worker_linux.go; assignment/ACK transitions
 in state_linux.go; persistence in journal_linux.go; spec/hash validation in spec_linux.go;
 Docker HTTP in docker_linux.go, the shared profile builder/validator in
-container_profile_linux.go, reconciliation in runner_linux.go; local stop/exit transitions in control_linux.go; local NVIDIA
+container_profile_linux.go, reconciliation in runner_linux.go; local stop/exit transitions in control_linux.go; bounded spool/collection in logs_linux.go; local NVIDIA
 preflight in gpu_linux.go. No service/repository abstractions or dependencies added. Read-only preflight reuses
 the same Unix HTTP client with its own five-second deadline and bounded response.
 
 Tests inject lost create/start replies, restart journals between observations, reject
 foreign/missing/created-after-intent containers, preserve pending events and test the
 actual container profile/spec boundary. Native CI runs the complete race/vet suite,
-starts a real digest-resolved busybox container, checks exit/output plus TERM-ignoring workload escalation, and retains the
+starts a real digest-resolved busybox container, checks exit/output, binary stdout/stderr and TERM-ignoring workload escalation, and retains the
 existing systemd install/restart/credentials/legacy helper/update/remove checks.
 The native image tag is resolved to an immutable digest for the test only; production
 specs always require a digest. No tests use the user's connected servers.

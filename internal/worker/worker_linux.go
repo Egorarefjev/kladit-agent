@@ -68,6 +68,10 @@ func Run(ctx context.Context, options Options) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	var pending <-chan syncResult
+	var logPending <-chan logResult
+	var logCancel context.CancelFunc
+	nextLog := time.Time{}
+	logBackoff := time.Second
 	nextSync := time.Time{}
 	notifiedDenied, sentAllowed, failed := false, false, false
 	for {
@@ -79,6 +83,9 @@ func Run(ctx context.Context, options Options) error {
 		done()
 		if err != nil {
 			return err
+		}
+		if fatal != nil && logCancel != nil {
+			logCancel()
 		}
 		if fatal != nil && j.stopped() {
 			return fatal
@@ -109,10 +116,57 @@ func Run(ctx context.Context, options Options) error {
 				result <- syncResult{response, err}
 			}()
 		}
+		if fatal == nil && allowed && logPending == nil && !time.Now().Before(nextLog) {
+			record, logErr := j.nextLogRecord()
+			if logErr != nil {
+				return logErr
+			}
+			if record != nil {
+				result := make(chan logResult, 1)
+				logPending = result
+				budget := 2 * time.Second
+				if record.Logs != nil && record.Logs.Pending != nil {
+					budget = 10 * time.Second
+				}
+				taskCtx, taskCancel := context.WithTimeout(ctx, budget)
+				logCancel = taskCancel
+				calls.Add(1)
+				go func() {
+					defer calls.Done()
+					defer taskCancel()
+					result <- runLogTask(taskCtx, docker, client, options, *record)
+				}()
+			} else {
+				nextLog = time.Now().Add(5 * time.Second)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+		case result := <-logPending:
+			logPending = nil
+			logCancel = nil
+			nextLog = time.Now().Add(time.Second)
+			if result.err != nil {
+				logBackoff = min(logBackoff*2, 60*time.Second)
+				var rejected *connection.JobLogsError
+				if errors.As(result.err, &rejected) {
+					logBackoff = max(logBackoff, rejected.RetryAfter)
+					if rejected.Status == 401 || rejected.Status == 403 {
+						fatal = result.err
+						if err = j.noteStop("AGENT_REVOKED"); err != nil {
+							return err
+						}
+					}
+				}
+				nextLog = time.Now().Add(logBackoff)
+			} else {
+				logBackoff = time.Second
+				if err = j.saveLogs(result); err != nil {
+					return err
+				}
+			}
 		case result := <-pending:
 			pending = nil
 			notifiedDenied = !sentAllowed

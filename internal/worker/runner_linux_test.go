@@ -309,7 +309,7 @@ func TestDockerNativeRunner(t *testing.T) {
 	if image == "" {
 		t.Skip("native Docker integration is run explicitly in CI")
 	}
-	j, options, a := runnerFixture(t, image)
+	j, options, a := runnerFixture(t, image, "/bin/sh", "-c", "printf 'out\\000\\377'; printf 'err\\342\\202\\254' >&2; echo done > /output/done")
 	defer j.Close()
 	options.DockerSocket = "/run/docker.sock"
 	d := newDocker(options.DockerSocket)
@@ -340,6 +340,7 @@ func TestDockerNativeRunner(t *testing.T) {
 			if err != nil || string(data) != "done\n" {
 				t.Fatal("native output missing", err)
 			}
+			verifyNativeLogs(t, d, j.state.Current)
 			return
 		}
 		if !r.Acked {

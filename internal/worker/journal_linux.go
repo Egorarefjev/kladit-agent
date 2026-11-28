@@ -16,9 +16,11 @@ import (
 )
 
 type journal struct {
-	root  *os.Root
-	lock  *os.File
-	state journalState
+	logQueue   []string
+	logIndexed bool
+	root       *os.Root
+	lock       *os.File
+	state      journalState
 }
 
 func openJournal(path string) (*journal, error) {
